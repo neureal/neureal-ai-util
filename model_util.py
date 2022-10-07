@@ -95,7 +95,7 @@ def net_copy(source, dest):
 def optimizer(net_name, opt_spec):
     beta_1, beta_2, decay = tf.constant(0.99,tf.float64), tf.constant(0.99,tf.float64), 0 # tf.constant(0.0,tf.float64)
     typ, schedule_type, learn_rate, float_eps, name = opt_spec['type'], opt_spec['schedule_type'], opt_spec['learn_rate'], opt_spec['float_eps'], '{}/optimizer_{}/'.format(net_name, opt_spec['name'])
-    maxval, minval = tf.constant(learn_rate), tf.cast(float_eps,tf.float64); mean, stddev = tf.constant(maxval/2), tf.constant((maxval-minval)/4)
+    maxval, minval = tf.constant(learn_rate), float_eps; mean, stddev = tf.constant(maxval/2), tf.constant((maxval-minval)/4)
     def schedule_r(): return tf.random.uniform((), dtype=tf.float64, maxval=maxval, minval=minval)
     def schedule_rtn(): return tf.random.truncated_normal((), dtype=tf.float64, mean=mean, stddev=stddev)
 
