@@ -317,7 +317,9 @@ class Out(tf.keras.layers.Layer):
             self.event_size[i], self.step_shape[i] = tf.constant(event_size), tf.constant(list(step_shape[1:-1])+[latent_size])
             self.arch_out += "{}{}".format(dist_type, num_components)
 
-    def call(self, inputs, batch_size=tf.constant(1), training=None):
+    def call(self, inputs, batch_size=None, training=None):
+        if batch_size == None:
+            batch_size = tf.constant(1) # tf.constant() initializes the graphics card, so it can't be a default parameter
         out = tf.cast(inputs, self.compute_dtype)
         if not self.net_attn_io: out = tf.reshape(out, (batch_size, -1))
         out_logits = [None]*self.net_outs
