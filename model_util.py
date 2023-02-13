@@ -47,6 +47,9 @@ def ewma_ih(arr_in, window): # infinite history, faster
     for i in range(1, n): ewma[i] = arr_in[i] * alpha + ewma[i-1] * (1 - alpha)
     return ewma
 
+def symlog(x): return tf.math.sign(x)*tf.math.log1p(tf.math.abs(x))
+def symexp(x): return tf.math.sign(x)*tf.math.expm1(tf.math.abs(x))
+
 def stats_update(stats_spec, value):
     b1, b1_n, b2, b2_n, dtype, var_ma, var_ema, var_iter = stats_spec['b1'], stats_spec['b1_n'], stats_spec['b2'], stats_spec['b2_n'], stats_spec['dtype'], stats_spec['ma'], stats_spec['ema'], stats_spec['iter']
     one = tf.constant(1, dtype)
@@ -189,7 +192,7 @@ def loss_bound(dist, targets):
     return loss
 
 def loss_entropy(dist, entropy_contrib): # "Soft Actor Critic" = try increase entropy
-    loss = tf.constant(0, tf.keras.backend.floatx())
+    loss = tf.constant([0], tf.keras.backend.floatx())
     if entropy_contrib > 0.0:
         if isinstance(dist, list):
             for i in range(len(dist)): loss = loss + dist[i].entropy()
@@ -273,7 +276,7 @@ class DeterministicSub(tfp.distributions.Deterministic):
         # return tf.constant([-1], dtype=x.dtype)
         loc = tf.convert_to_tensor(self.loc)
         loss = tf.math.abs(tf.math.subtract(x, loc))
-        loss = tf.math.negative(tf.math.reduce_sum(loss, axis=tf.range(1, tf.rank(loss))))
+        loss = tf.math.negative(tf.math.reduce_sum(loss, axis=-1))
         return loss
 class Deterministic(tfp.layers.DistributionLambda):
     def __init__(self, event_shape=(), **kwargs):
@@ -428,10 +431,10 @@ class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
         float_eps = tf.experimental.numpy.finfo(self.compute_dtype).eps
 
         if norm:
-            # self._layer_norm_key = tf.keras.layers.LayerNormalization(epsilon=float_eps, center=True, scale=True, name='norm_key')
-            # self._layer_norm_value = tf.keras.layers.LayerNormalization(epsilon=float_eps, center=True, scale=True, name='norm_value')
-            self._layer_dense_key_in = tf.keras.layers.Dense(hidden_size, activation=EvoNormS0(evo), use_bias=False, name='dense_key_in')
-            self._layer_dense_value_in = tf.keras.layers.Dense(hidden_size, activation=EvoNormS0(evo), use_bias=False, name='dense_value_in')
+            # self._layer_norm_key = tf.keras.layers.LayerNormalization(epsilon=float_eps, center=True, scale=True, name='_norm_key')
+            # self._layer_norm_value = tf.keras.layers.LayerNormalization(epsilon=float_eps, center=True, scale=True, name='_norm_value')
+            self._layer_dense_key_in = tf.keras.layers.Dense(hidden_size, activation=EvoNormS0(evo), use_bias=False, name='_dense_key_in')
+            self._layer_dense_value_in = tf.keras.layers.Dense(hidden_size, activation=EvoNormS0(evo), use_bias=False, name='_dense_value_in')
 
         # query_scale = 1.0 / tf.math.sqrt(tf.cast(self._key_dim, dtype=self.compute_dtype))
         # self._query_scale = tf.identity(query_scale)
@@ -604,9 +607,9 @@ class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
 class MLPBlock(tf.keras.layers.Layer):
     def __init__(self, hidden_size, latent_size, evo=None, residual=True, **kwargs):
         super(MLPBlock, self).__init__(**kwargs)
-        if evo is None: self._layer_dense = tf.keras.layers.Dense(hidden_size, activation=tf.keras.activations.gelu, use_bias=False, name='dense')
-        else: self._layer_dense = tf.keras.layers.Dense(hidden_size, activation=EvoNormS0(evo), use_bias=False, name='dense')
-        self._layer_dense_latent = tf.keras.layers.Dense(latent_size, name='dense_latent')
+        if evo is None: self._layer_dense = tf.keras.layers.Dense(hidden_size, activation=tf.keras.activations.gelu, use_bias=False, name='_dense')
+        else: self._layer_dense = tf.keras.layers.Dense(hidden_size, activation=EvoNormS0(evo), use_bias=False, name='_dense')
+        self._layer_dense_latent = tf.keras.layers.Dense(latent_size, name='_dense_latent')
         self._residual = residual
 
     def build(self, input_shape):

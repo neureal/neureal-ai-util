@@ -21,17 +21,20 @@ def get_spec(space, space_name='obs', name='', compute_dtype='float64', net_attn
         dtype, dtype_out = tf.dtypes.as_dtype(space.dtype), tf.dtypes.as_dtype('int32')
         spec = [{'space_name':space_name, 'name':name, 'dtype':dtype, 'dtype_out':dtype_out, 'min':tf.constant(0,dtype_out), 'max':tf.constant(space.n-1,dtype_out),
             'dist_type':'c', 'num_components':space.n, 'event_shape':(1,), 'event_size':1, 'channels':1, 'step_shape':tf.TensorShape((1,1)), 'num_latents':1}]
-        zero, zero_out = [tf.constant([[0]], dtype)], [tf.constant([[0]], dtype_out)]
+        zero, zero_out = [tf.constant([[1]], dtype)], [tf.constant([[1]], dtype_out)]
     # elif isinstance(space, gym.spaces.MultiDiscrete): # TODO
     elif isinstance(space, gym.spaces.Box):
         dtype, dtype_out = tf.dtypes.as_dtype(space.dtype), tf.dtypes.as_dtype(compute_dtype)
         if dtype == tf.uint8 or dtype == tf.int32 or dtype == tf.int64 or dtype == tf.bool: dist_type, num_components, event_shape, dtype_out = 'c', int(space.high.max().item())+1, (space.shape[-1],), tf.dtypes.as_dtype('int32')
         else: dist_type, num_components, event_shape = 'mx', int(np.prod(space.shape).item()*mixture_multi), space.shape
         event_size, channels, step_shape = int(np.prod(space.shape[:-1]).item()), space.shape[-1], tf.TensorShape([1]+list(space.shape))
-        num_latents = aio_max_latents if event_size > aio_max_latents else event_size
+        # num_latents = aio_max_latents if event_size > aio_max_latents else event_size
+        num_latents = int(2**np.ceil(np.log2(event_size/16)))
+        num_latents = aio_max_latents if num_latents < aio_max_latents else num_latents
+        num_latents = event_size if event_size <= aio_max_latents else num_latents
         spec = [{'space_name':space_name, 'name':name, 'dtype':dtype, 'dtype_out':dtype_out, 'min':tf.constant(space.low,dtype_out), 'max':tf.constant(space.high,dtype_out),
             'dist_type':dist_type, 'num_components':num_components, 'event_shape':event_shape, 'event_size':event_size, 'channels':channels, 'step_shape':step_shape, 'num_latents':num_latents}]
-        zero, zero_out = [tf.zeros(step_shape, dtype)], [tf.zeros(step_shape, dtype_out)]
+        zero, zero_out = [tf.ones(step_shape, dtype)], [tf.ones(step_shape, dtype_out)]
     elif isinstance(space, (gym.spaces.Tuple, gym.spaces.Dict)):
         spec, zero, zero_out = [], [], []
         loop = space.spaces.items() if isinstance(space, gym.spaces.Dict) else enumerate(space.spaces)
