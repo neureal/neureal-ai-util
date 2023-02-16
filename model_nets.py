@@ -30,6 +30,7 @@ class ArchFull(tf.keras.Model):
         self.arch_desc = "{}[in{}_net{}_out{}_{}]".format(name, arch_in+'-'+self.inp.arch_in, arch_net, arch_out+'-'+self.out.arch_out, self.inp.arch_lat)
 
     def reset_states(self, use_img=False):
+        if self.inp.net_attn_io2: self.inp.layer_attn_io2._mem_score.assign(self.inp.layer_attn_io2._mem_score_zero)
         for layer in self.net.layer_attn: layer.reset_states(use_img=use_img)
         for layer in self.net.layer_lstm: layer.reset_states()
     def call(self, inputs, store_memory=True, use_img=False, store_real=False, training=None):
@@ -66,6 +67,7 @@ class ArchTrans(tf.keras.Model):
         self.arch_desc = "{}[in{}_net{}_{}]".format(name, arch_in+'-'+self.inp.arch_in, arch_net, self.net.arch_lat)
 
     def reset_states(self, use_img=False):
+        if self.inp.net_attn_io2: self.inp.layer_attn_io2._mem_score.assign(self.inp.layer_attn_io2._mem_score_zero)
         for layer in self.net.layer_attn: layer.reset_states(use_img=use_img)
         for layer in self.net.layer_lstm: layer.reset_states()
     def call(self, inputs, store_memory=True, use_img=False, store_real=False, training=None):
@@ -94,7 +96,8 @@ class ArchRep(tf.keras.Model):
         self.arch_desc_file = "{}[in{}_{}]".format(name, arch_in, self.inp.arch_lat)
         self.arch_desc = "{}[in{}_{}]".format(name, arch_in+'-'+self.inp.arch_in, self.inp.arch_lat)
 
-    def reset_states(self, use_img=False): return
+    def reset_states(self, use_img=False):
+        if self.inp.net_attn_io2: self.inp.layer_attn_io2._mem_score.assign(self.inp.layer_attn_io2._mem_score_zero)
     def call(self, inputs, training=None):
         out = self.inp(inputs, training=training)
 
@@ -222,7 +225,7 @@ class In(tf.keras.layers.Layer):
     def __init__(self, latent_spec, spec_in, obs_latent=False, net_attn_io=False, num_heads=1, aug_data_pos=False):
         super(In, self).__init__(name='inp')
         inp, evo, latent_size, aio_max_latents = latent_spec['inp'], latent_spec['evo'], latent_spec['latent_size'], latent_spec['max_latents']
-        self.latent_size, self.obs_latent, self.net_attn_io, self.num_latents, self.net_attn_io2 = tf.constant(latent_size), obs_latent, net_attn_io, 0, False
+        self.latent_size, self.obs_latent, self.net_attn_io, self.num_latents, self.net_attn_io2, self.spec_in = tf.constant(latent_size), obs_latent, net_attn_io, 0, False, spec_in
 
         self.net_ins = len(spec_in); self.input_names, self.layer_attn_in, self.layer_mlp_in, self.pos_idx_in = OrderedDict(), OrderedDict(), OrderedDict(), OrderedDict()
         for i in range(self.net_ins):
@@ -247,7 +250,7 @@ class In(tf.keras.layers.Layer):
             self.layer_mlp_in[space_name] += [util.MLPBlock(hidden_size=inp, latent_size=latent_size, evo=evo, residual=False, name='mlp_in_{}_{}'.format(space_name, input_name))]
         if net_attn_io and self.num_latents > aio_max_latents:
             self.net_attn_io2, self.num_latents = True, aio_max_latents
-            self.layer_attn_io2 = util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, norm=False, residual=False, cross_type=1, num_latents=self.num_latents, channels=latent_size, name='attn_io2')
+            self.layer_attn_io2 = util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, norm=False, residual=False, cross_type=1, num_latents=self.num_latents, channels=latent_size, save_attn_scores=True, name='attn_io2')
         if obs_latent: self.net_ins += 1; self.num_latents += latent_spec['num_latents']
         else: latent_spec.update({'num_latents':self.num_latents})
 

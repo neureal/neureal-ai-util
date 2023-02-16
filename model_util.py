@@ -422,11 +422,11 @@ class MixtureLogistic(tfp.layers.DistributionLambda):
 
 from tensorflow.python.ops import special_math_ops
 class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
-    def __init__(self, latent_size, num_heads=1, memory_size=None, sort_memory=False, norm=False, hidden_size=None, evo=None, residual=True, use_bias=False, cross_type=None, num_latents=None, channels=None, init_zero=None, **kwargs): # cross_type: 1 = input, 2 = output
+    def __init__(self, latent_size, num_heads=1, memory_size=None, sort_memory=False, norm=False, hidden_size=None, evo=None, residual=True, use_bias=False, cross_type=None, num_latents=None, channels=None, init_zero=None, save_attn_scores=False, **kwargs): # cross_type: 1 = input, 2 = output
         key_dim = int(channels/num_heads) if cross_type == 2 else int(latent_size/num_heads)
         # key_dim = int(latent_size/num_heads)
         super(MultiHeadAttention, self).__init__(tf.identity(num_heads), tf.identity(key_dim), use_bias=use_bias, **kwargs)
-        self._mem_size, self._sort_memory, self._norm, self._residual, self._cross_type = memory_size, sort_memory, norm, residual, cross_type
+        self._mem_size, self._sort_memory, self._norm, self._residual, self._cross_type, self._save_attn_scores = memory_size, sort_memory, norm, residual, cross_type, save_attn_scores
         self._mem_channels = latent_size if cross_type != 1 else channels
         float_eps = tf.experimental.numpy.finfo(self.compute_dtype).eps
 
@@ -474,6 +474,10 @@ class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
             #     self._mem_score = tf.Variable(self._mem_score_zero, trainable=False, name='mem_score')
         if self._cross_type: self._init_latent = tf.Variable(self._init_zero, trainable=True, name='init_latent')
         if self._residual: self._residual_amt = tf.Variable(0.0, dtype=self.compute_dtype, trainable=True, name='residual') # ReZero
+        if self._save_attn_scores:
+            mem_score_zero = tf.constant(np.full((input_shape[-2],), 0), self.compute_dtype)
+            self._mem_score_zero = tf.identity(mem_score_zero)
+            self._mem_score = tf.Variable(self._mem_score_zero, trainable=False, name='mem_score')
 
     def _compute_attention(self, query, key, value, attention_mask=None):
         # query = tf.math.multiply(query, self._query_scale)
@@ -586,6 +590,9 @@ class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
 
         #     scores_sorted = tf.gather(self._mem_score[:,self._mem_idx:], scores, axis=1)
         #     self._mem_score[:,self._mem_idx:].assign(scores_sorted)
+        if self._save_attn_scores:
+            scores = tf.math.reduce_mean(attn_scores, axis=(1,2))[0]
+            self._mem_score.assign_add(scores)
 
         attn_output = self._output_dense(attn_output)
         if self._residual: attn_output = query + attn_output * self._residual_amt # ReZero
