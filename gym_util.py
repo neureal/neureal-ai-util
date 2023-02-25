@@ -1,7 +1,7 @@
 from collections import OrderedDict
 import numpy as np
 import tensorflow as tf
-import gym
+import gymnasium as gym
 
 def get_space_zero(space):
     if isinstance(space, gym.spaces.Discrete): zero = np.asarray(0, space.dtype)
@@ -29,7 +29,7 @@ def get_spec(space, space_name='obs', name='', compute_dtype='float64', net_attn
         else: dist_type, num_components, event_shape = 'mx', int(np.prod(space.shape).item()*mixture_multi), space.shape
         event_size, channels, step_shape = int(np.prod(space.shape[:-1]).item()), space.shape[-1], tf.TensorShape([1]+list(space.shape))
         # num_latents = aio_max_latents if event_size > aio_max_latents else event_size
-        num_latents = int(2**np.ceil(np.log2(event_size/16)))
+        num_latents = int(2**np.ceil(np.log2(np.sqrt(event_size)*2)))
         num_latents = aio_max_latents if num_latents < aio_max_latents else num_latents
         num_latents = event_size if event_size <= aio_max_latents else num_latents
         spec = [{'space_name':space_name, 'name':name, 'dtype':dtype, 'dtype_out':dtype_out, 'min':tf.constant(space.low,dtype_out), 'max':tf.constant(space.high,dtype_out),

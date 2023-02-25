@@ -3,6 +3,7 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import tensorflow_addons as tfa
 import numba
+from lion import Lion
 
 # TODO put this in seperate repo
 # TODO test to make sure looping constructs are working like I think, ie python loop only happens once on first trace and all refs are correct on subsequent runs
@@ -51,13 +52,14 @@ def symlog(x): return tf.math.sign(x)*tf.math.log1p(tf.math.abs(x))
 def symexp(x): return tf.math.sign(x)*tf.math.expm1(tf.math.abs(x))
 
 def stats_update(stats_spec, value):
-    b1, b1_n, b2, b2_n, dtype, var_ma, var_ema, var_iter = stats_spec['b1'], stats_spec['b1_n'], stats_spec['b2'], stats_spec['b2_n'], stats_spec['dtype'], stats_spec['ma'], stats_spec['ema'], stats_spec['iter']
+    b1, b1_n, b2, b2_n, dtype, var_ma, var_ema, var_iter, var_sum = stats_spec['b1'], stats_spec['b1_n'], stats_spec['b2'], stats_spec['b2_n'], stats_spec['dtype'], stats_spec['ma'], stats_spec['ema'], stats_spec['iter'], stats_spec['sum']
     one = tf.constant(1, dtype)
     var_ma.assign(b1 * var_ma + b1_n * value)
     var_ema.assign(b2 * var_ema + b2_n * (value * value))
     var_iter.assign_add(one)
+    var_sum.assign_add(value)
 def stats_get(stats_spec):
-    b1, b2, dtype, var_ma, var_ema, var_iter = stats_spec['b1'], stats_spec['b2'], stats_spec['dtype'], stats_spec['ma'], stats_spec['ema'], stats_spec['iter']
+    b1, b2, dtype, var_ma, var_ema, var_iter, var_sum = stats_spec['b1'], stats_spec['b2'], stats_spec['dtype'], stats_spec['ma'], stats_spec['ema'], stats_spec['iter'], stats_spec['sum']
     zero, one, float_eps = tf.constant(0, dtype), tf.constant(1, dtype), tf.constant(tf.experimental.numpy.finfo(dtype).eps, dtype)
 
     ma = one - tf.math.pow(b1, var_iter)
@@ -74,7 +76,8 @@ def stats_get(stats_spec):
     std = ema - ma # -std2
 
     if ma < zero: ema = -ema
-    return ma, ema, snr, std
+    avg = var_sum / var_iter
+    return avg, ma, ema, snr, std
 
 
 def net_build(net, initializer):
@@ -117,7 +120,10 @@ def optimizer(net_name, opt_spec):
     if typ == 'co': optimizer = tfa.optimizers.COCOB(alpha=100.0, use_locking=True, name=name+'COCOB')
     if typ == 'ws': optimizer = tfa.optimizers.SWA(tf.keras.optimizers.SGD(learning_rate=learn_rate), start_averaging=0, average_period=10, name=name+'SWA') # has error with floatx=float64
     if typ == 'sw': optimizer = tfa.optimizers.SGDW(learning_rate=learn_rate, weight_decay=opt_spec['weight_decay'], name=name+'SGDW')
-    # if typ == 'ax': optimizer = tf.keras.optimizers.experimental.Adam(beta_1=beta_1, beta_2=beta_2, amsgrad=False, learning_rate=learn_rate, epsilon=float_eps, name=name+'AdamEx')
+    # if typ == 'ax':
+    #     optimizer = tf.keras.optimizers.experimental.Adam(beta_1=beta_1, beta_2=beta_2, amsgrad=False, learning_rate=learn_rate, epsilon=float_eps, name=name+'AdamEx')
+    #     optimizer.weights = [optimizer.iterations] + optimizer._momentums _velocities
+    if typ == 'l': optimizer = Lion(learning_rate=learn_rate, beta_1=tf.constant(0.9,tf.float64), beta_2=tf.constant(0.99,tf.float64), name=name+'Lion')
 
     # optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer, dynamic=False, initial_scale=2**15)
     if schedule_type == 'ep': optimizer.episodes = optimizer.add_slot(tf.Variable(0, trainable=False, name=name), 'episodes')
@@ -172,11 +178,11 @@ def loss_likelihood(dist, targets, probs=False):
         loss = tf.constant(0, tf.keras.backend.floatx())
         for i in range(len(dist)):
             t = tf.cast(targets[i], dist[i].dtype)
-            if probs: loss = loss - tf.math.exp(dist[i].log_prob(t))
+            if probs: loss = loss - tf.reduce_sum(tf.math.exp(dist[i].log_prob(t)))
             else: loss = loss - tf.reduce_sum(dist[i].log_prob(t))
     else:
         targets = tf.cast(targets, dist.dtype)
-        if probs: loss = -tf.math.exp(dist.log_prob(targets))
+        if probs: loss = -tf.reduce_sum(tf.math.exp(dist.log_prob(targets)))
         else: loss = -tf.reduce_sum(dist.log_prob(targets))
 
     isinfnan = tf.math.count_nonzero(tf.math.logical_or(tf.math.is_nan(loss), tf.math.is_inf(loss)))
@@ -192,16 +198,16 @@ def loss_bound(dist, targets):
     return loss
 
 def loss_entropy(dist, entropy_contrib): # "Soft Actor Critic" = try increase entropy
-    loss = tf.constant([0], tf.keras.backend.floatx())
+    loss = tf.constant(0, tf.keras.backend.floatx())
     if entropy_contrib > 0.0:
         if isinstance(dist, list):
-            for i in range(len(dist)): loss = loss + dist[i].entropy()
-        else: loss = dist.entropy()
+            for i in range(len(dist)): loss = loss + tf.math.reduce_sum(dist[i].entropy())
+        else: loss =  tf.math.reduce_sum(dist.entropy())
         loss = -loss * entropy_contrib
 
     isinfnan = tf.math.count_nonzero(tf.math.logical_or(tf.math.is_nan(loss), tf.math.is_inf(loss)))
     if isinfnan > 0: tf.print('NaN/Inf entropy loss:', loss)
-    return loss
+    return tf.reshape(loss,(1,))
 
 def loss_PG(dist, targets, returns, values=None, returns_target=None): # policy gradient, actor/critic
     compute_dtype = tf.keras.backend.floatx()

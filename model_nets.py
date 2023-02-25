@@ -20,7 +20,7 @@ class ArchFull(tf.keras.Model):
         self.stats = OrderedDict()
         for spec in stats_spec: self.stats[spec['name']] = {'b1':tf.constant(spec['b1'],spec['dtype']), 'b1_n':tf.constant(1-spec['b1'],spec['dtype']), 'b2':tf.constant(spec['b2'],spec['dtype']), 'b2_n':tf.constant(1-spec['b2'],spec['dtype']), 'dtype':spec['dtype'],
             'ma':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/ma'.format(name,spec['name'])), 'ema':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/ema'.format(name,spec['name'])),
-            'iter':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/iter'.format(name,spec['name'])),}
+            'iter':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/iter'.format(name,spec['name'])), 'sum':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/sum'.format(name,spec['name'])),}
 
         self(inputs); self.call = tf.function(self.call, experimental_autograph_options=tf.autograph.experimental.Feature.LISTS)
         arch_in = "{}D{}".format(('Aio+' if net_attn['io'] else ''), latent_spec['inp'])
@@ -58,7 +58,7 @@ class ArchTrans(tf.keras.Model):
         self.stats = OrderedDict()
         for spec in stats_spec: self.stats[spec['name']] = {'b1':tf.constant(spec['b1'],spec['dtype']), 'b1_n':tf.constant(1-spec['b1'],spec['dtype']), 'b2':tf.constant(spec['b2'],spec['dtype']), 'b2_n':tf.constant(1-spec['b2'],spec['dtype']), 'dtype':spec['dtype'],
             'ma':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/ma'.format(name,spec['name'])), 'ema':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/ema'.format(name,spec['name'])),
-            'iter':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/iter'.format(name,spec['name'])),}
+            'iter':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/iter'.format(name,spec['name'])), 'sum':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/sum'.format(name,spec['name'])),}
 
         self(inputs); self.call = tf.function(self.call, experimental_autograph_options=tf.autograph.experimental.Feature.LISTS)
         arch_in = "{}D{}".format(('Aio+' if net_attn['io'] else ''), latent_spec['inp'])
@@ -89,7 +89,7 @@ class ArchRep(tf.keras.Model):
         self.stats = OrderedDict()
         for spec in stats_spec: self.stats[spec['name']] = {'b1':tf.constant(spec['b1'],spec['dtype']), 'b1_n':tf.constant(1-spec['b1'],spec['dtype']), 'b2':tf.constant(spec['b2'],spec['dtype']), 'b2_n':tf.constant(1-spec['b2'],spec['dtype']), 'dtype':spec['dtype'],
             'ma':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/ma'.format(name,spec['name'])), 'ema':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/ema'.format(name,spec['name'])),
-            'iter':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/iter'.format(name,spec['name'])),}
+            'iter':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/iter'.format(name,spec['name'])), 'sum':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/sum'.format(name,spec['name'])),}
 
         self(inputs); self.call = tf.function(self.call, experimental_autograph_options=tf.autograph.experimental.Feature.LISTS)
         arch_in = "{}D{}".format(('Aio+' if net_attn['io'] else ''), latent_spec['inp'])
@@ -124,7 +124,7 @@ class ArchGen(tf.keras.Model):
         self.stats = OrderedDict()
         for spec in stats_spec: self.stats[spec['name']] = {'b1':tf.constant(spec['b1'],spec['dtype']), 'b1_n':tf.constant(1-spec['b1'],spec['dtype']), 'b2':tf.constant(spec['b2'],spec['dtype']), 'b2_n':tf.constant(1-spec['b2'],spec['dtype']), 'dtype':spec['dtype'],
             'ma':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/ma'.format(name,spec['name'])), 'ema':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/ema'.format(name,spec['name'])),
-            'iter':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/iter'.format(name,spec['name'])),}
+            'iter':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/iter'.format(name,spec['name'])), 'sum':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/sum'.format(name,spec['name'])),}
 
         self(inputs); self.call = tf.function(self.call, experimental_autograph_options=tf.autograph.experimental.Feature.LISTS)
         arch_net = "{:02d}{}{}D{}".format(net_blocks, ('AT+' if net_attn['net'] else ''), ('LS+' if net_lstm else ''), latent_spec['midp'])
@@ -163,7 +163,7 @@ class ArchNet(tf.keras.Model):
         self.stats = OrderedDict()
         for spec in stats_spec: self.stats[spec['name']] = {'b1':tf.constant(spec['b1'],spec['dtype']), 'b1_n':tf.constant(1-spec['b1'],spec['dtype']), 'b2':tf.constant(spec['b2'],spec['dtype']), 'b2_n':tf.constant(1-spec['b2'],spec['dtype']), 'dtype':spec['dtype'],
             'ma':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/ma'.format(name,spec['name'])), 'ema':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/ema'.format(name,spec['name'])),
-            'iter':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/iter'.format(name,spec['name'])),}
+            'iter':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/iter'.format(name,spec['name'])), 'sum':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/sum'.format(name,spec['name'])),}
 
         self(inputs); self.call = tf.function(self.call, experimental_autograph_options=tf.autograph.experimental.Feature.LISTS)
         arch_net = "{:02d}{}{}D{}".format(net_blocks, ('AT+' if net_attn['net'] else ''), ('LS+' if net_lstm else ''), latent_spec['midp'])
@@ -197,7 +197,7 @@ class ArchAR(tf.keras.Model):
         self.stats = OrderedDict()
         for spec in stats_spec: self.stats[spec['name']] = {'b1':tf.constant(spec['b1'],spec['dtype']), 'b1_n':tf.constant(1-spec['b1'],spec['dtype']), 'b2':tf.constant(spec['b2'],spec['dtype']), 'b2_n':tf.constant(1-spec['b2'],spec['dtype']), 'dtype':spec['dtype'],
             'ma':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/ma'.format(name,spec['name'])), 'ema':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/ema'.format(name,spec['name'])),
-            'iter':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/iter'.format(name,spec['name'])),}
+            'iter':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/iter'.format(name,spec['name'])), 'sum':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/sum'.format(name,spec['name'])),}
 
         self(inputs); self.call = tf.function(self.call, experimental_autograph_options=tf.autograph.experimental.Feature.LISTS)
         arch_net = "{:02d}{}{}D{}".format(net_blocks, ('AT+' if net_attn['net'] else ''), ('LS+' if net_lstm else ''), latent_spec['midp'])
