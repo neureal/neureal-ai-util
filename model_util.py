@@ -5,7 +5,6 @@ import tensorflow_addons as tfa
 import numba
 from lion import Lion
 
-# TODO put this in seperate repo
 # TODO test to make sure looping constructs are working like I think, ie python loop only happens once on first trace and all refs are correct on subsequent runs
 
 def print_time(t):
@@ -82,21 +81,24 @@ def stats_get(stats_spec):
 
 def net_build(net, initializer):
     net.reset_states()
-    net.weights_reset = []
+    net.weights_reset, net.weights_store = [], []
     for w in net.weights:
         w.is_kernel = True if "/kernel:" in w.name else False
         if w.is_kernel: w.assign(initializer(w.shape))
         net.weights_reset.append(w.value())
+        net.weights_store.append(w.value())
     net.initializer = initializer
-
 def net_reset(net):
     for i in range(len(net.weights)):
         w = net.weights[i]
         if w.is_kernel: w.assign(net.initializer(w.shape))
         else: w.assign(net.weights_reset[i])
-
 def net_copy(source, dest):
     for i in range(len(dest.weights)): dest.weights[i].assign(source.weights[i].value())
+def net_store(net):
+    for i in range(len(net.weights)): net.weights_store[i] = net.weights[i].value()
+def net_restore(net):
+    for i in range(len(net.weights)): net.weights[i].assign(net.weights_store[i])
 
 def optimizer(net_name, opt_spec):
     beta_1, beta_2, decay = tf.constant(0.99,tf.float64), tf.constant(0.99,tf.float64), 0 # tf.constant(0.0,tf.float64)
@@ -572,6 +574,7 @@ class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
 
         attn_output, attn_scores = self._compute_attention(query_, key, value, attention_mask)
 
+        # TODO add this back in as extra "long term" memory that stays past reset_states
         # if self._mem_size is not None and store_memory and self._sort_memory and (store_real or not use_img):
         #     drop_off = tf.roll(self._mem_score, shift=-time_size, axis=1)
         #     self._mem_score.assign(drop_off)
