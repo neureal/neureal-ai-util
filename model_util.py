@@ -494,15 +494,15 @@ class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
         attn_output = special_math_ops.einsum(self._combine_equation, attn_scores, value)
         return attn_output, attn_scores
 
-    def call(self, value, attention_mask=None, auto_mask=None, store_memory=True, use_img=False, store_real=False, num_latents=None):
-        latent_size = tf.shape(value)[-1]
+    def call(self, value, attention_mask=None, auto_mask=None, store_memory=True, use_img=False, store_real=False, num_latents=None, batch_size=None):
+        if batch_size is None: batch_size = 1
+        latent_size = value.shape[-1]
         if self._cross_type:
             # value[0](batch) = time dim, value[1:-2] = space/feat dim, value[-1] = channel dim
-            value = tf.reshape(value, (1, -1, latent_size))
+            value = tf.reshape(value, (batch_size, -1, latent_size))
             query = self._init_latent if num_latents is None else self._init_latent[:,:num_latents]
+            if batch_size != 1: query = tf.repeat(query, repeats=batch_size, axis=0)
         else: query = value
-        batch_size = 1; neg_batch_size = -1; time_size = tf.shape(value)[1]
-        # batch_size = tf.shape(value)[0]; neg_batch_size = -batch_size; time_size = tf.shape(value)[1]
         if not self._built_from_signature: self._build_from_signature(query=query, value=value, key=None)
 
         if self._mem_size is not None:
@@ -547,9 +547,9 @@ class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
             if use_img and not store_real: mem_idx, memory = self._mem_idx_img, self._memory_img
             else: mem_idx, memory = self._mem_idx, self._memory
 
-            drop_off = tf.roll(memory, shift=neg_batch_size, axis=0)
+            drop_off = tf.roll(memory, shift=-batch_size, axis=0)
             memory.assign(drop_off)
-            memory[neg_batch_size:].assign(value)
+            memory[-batch_size:].assign(value)
 
             if mem_idx > 0:
                 mem_idx_next = mem_idx - batch_size
@@ -559,20 +559,20 @@ class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
         # TODO loop through value or query if too big for memory?
         query_ = self._query_dense(query)
         if self._norm:
-            key = self._layer_dense_key_in(value_mem)
-            key = self._key_dense(key)
-        else: key = self._key_dense(value_mem)
-        # if self._norm: key = self._layer_norm_key(key)
+            key_ = self._layer_dense_key_in(value_mem)
+            key_ = self._key_dense(key_)
+        else: key_ = self._key_dense(value_mem)
+        # if self._norm: key_ = self._layer_norm_key(key_)
         if self._norm:
-            value = self._layer_dense_value_in(value_mem)
-            value = self._value_dense(value)
-        else: value = self._value_dense(value_mem)
-        # if self._norm: value = self._layer_norm_value(value)
+            value_ = self._layer_dense_value_in(value_mem)
+            value_ = self._value_dense(value_)
+        else: value_ = self._value_dense(value_mem)
+        # if self._norm: value_ = self._layer_norm_value(value_)
 
-        seq_size = tf.shape(query)[1]
+        time_size, seq_size = tf.shape(value)[1], tf.shape(query)[1]
         if auto_mask: attention_mask = tf.linalg.band_part(tf.ones((time_size,seq_size)), -1, seq_size - time_size)
 
-        attn_output, attn_scores = self._compute_attention(query_, key, value, attention_mask)
+        attn_output, attn_scores = self._compute_attention(query_, key_, value_, attention_mask)
 
         # TODO add this back in as extra "long term" memory that stays past reset_states
         # if self._mem_size is not None and store_memory and self._sort_memory and (store_real or not use_img):
@@ -605,7 +605,7 @@ class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
 
         attn_output = self._output_dense(attn_output)
         if self._residual: attn_output = query + attn_output * self._residual_amt # ReZero
-        if self._cross_type: attn_output = tf.squeeze(attn_output, axis=0)
+        if self._cross_type and batch_size == 1: attn_output = tf.squeeze(attn_output, axis=0)
         return attn_output
 
     def reset_states(self, use_img=False):

@@ -140,15 +140,15 @@ class ArchGen(tf.keras.Model):
         # self.layer_attn_in.reset_states(use_img=use_img)
         for layer in self.net.layer_attn: layer.reset_states(use_img=use_img)
         for layer in self.net.layer_lstm: layer.reset_states()
-    def call(self, inputs, store_memory=True, use_img=False, store_real=False, training=None):
+    def call(self, inputs, store_memory=True, use_img=False, store_real=False, batch_size=None, training=None):
         # # out = self.layer_attn_in(inputs, use_img=True, store_real=True)
         # # out = self.layer_attn_in(inputs)
         # out = tf.squeeze(self.layer_attn_in(tf.expand_dims(inputs, axis=0), use_img=True, store_real=True), axis=0)
         # out = self.layer_mlp_in(out)
 
-        out = self.net(inputs, store_memory=store_memory, use_img=use_img, store_real=store_real, training=training)
+        out = self.net(inputs, store_memory=store_memory, use_img=use_img, store_real=store_real, batch_size=batch_size, training=training)
         dist = self.net.dist(out); out = dist.sample()
-        out = self.out(out, training=training)
+        out = self.out(out, batch_size=batch_size, training=training)
 
         for out_n in out:
             isinfnan = tf.math.count_nonzero(tf.math.logical_or(tf.math.is_nan(out_n), tf.math.is_inf(out_n)))
@@ -177,8 +177,8 @@ class ArchNet(tf.keras.Model):
     def reset_states(self, use_img=False):
         for layer in self.net.layer_attn: layer.reset_states(use_img=use_img)
         for layer in self.net.layer_lstm: layer.reset_states()
-    def call(self, inputs, store_memory=True, use_img=False, store_real=False, training=None):
-        out = self.net(inputs, store_memory=store_memory, use_img=use_img, store_real=store_real, training=training)
+    def call(self, inputs, store_memory=True, use_img=False, store_real=False, batch_size=None, training=None):
+        out = self.net(inputs, store_memory=store_memory, use_img=use_img, store_real=store_real, batch_size=batch_size, training=training)
 
         isinfnan = tf.math.count_nonzero(tf.math.logical_or(tf.math.is_nan(out), tf.math.is_inf(out)))
         if isinfnan > 0: tf.print(self.name, 'net out:', out)
@@ -212,11 +212,12 @@ class ArchAR(tf.keras.Model):
     def reset_states(self, use_img=False):
         for layer in self.net.layer_attn: layer.reset_states(use_img=use_img)
         for layer in self.net.layer_lstm: layer.reset_states()
-    def call(self, inputs, store_memory=True, use_img=False, store_real=False, training=None):
-        out = self.net(inputs, store_memory=store_memory, use_img=use_img, store_real=store_real, training=training)
-        if self.net_attn_io: out = self.layer_attn_out(out)
+    def call(self, inputs, store_memory=True, use_img=False, store_real=False, batch_size=None, training=None):
+        out = self.net(inputs, store_memory=store_memory, use_img=use_img, store_real=store_real, batch_size=batch_size, training=training)
+        if self.net_attn_io: out = self.layer_attn_out(out, batch_size=batch_size)
         else:
-            out = tf.reshape(out, (1, -1))
+            if batch_size is None: batch_size = 1
+            out = tf.reshape(out, (batch_size, -1))
             out = self.layer_dense_out(out)
         out = tf.reshape(out, self.out_shape)
         # out = self.layer_out_logits(out) # _trans-logits
@@ -334,12 +335,14 @@ class Net(tf.keras.layers.Layer):
 
         self.arch_lat = "L{}{}x{}".format(latent_spec['dist_type'], self.num_latents, latent_size)
 
-    def call(self, inputs, store_memory=True, use_img=False, store_real=False, training=None):
+    def call(self, inputs, store_memory=True, use_img=False, store_real=False, batch_size=None, training=None):
         out = tf.cast(inputs, self.compute_dtype)
+        if batch_size is None: out = tf.expand_dims(out, axis=0)
         for i in range(self.net_blocks):
-            if self.net_attn: out = tf.squeeze(self.layer_attn[i](tf.expand_dims(out, axis=0), auto_mask=training, store_memory=store_memory, use_img=use_img, store_real=store_real), axis=0)
-            if self.net_lstm: out = tf.squeeze(self.layer_lstm[i](tf.expand_dims(out, axis=0), training=training), axis=0)
+            if self.net_attn: out = self.layer_attn[i](out, auto_mask=training, store_memory=store_memory, use_img=use_img, store_real=store_real)
+            if self.net_lstm: out = self.layer_lstm[i](out, training=training)
             out = self.layer_mlp[i](out)
+        if batch_size is None: out = tf.squeeze(out, axis=0)
         if self.obs_latent:
             if self.net_attn_io: out = self.layer_attn_out(out)
             else: out = tf.reshape(self.layer_dense_out(tf.reshape(out, (1, -1))), (self.num_latents, -1))
@@ -362,17 +365,18 @@ class Out(tf.keras.layers.Layer):
             else: self.layer_dense_out[i] = tf.keras.layers.Dense(event_size*latent_size, name='dense_out_{}_{}'.format(space_name, output_name))
             self.layer_out_logits[i] = util.MLPBlock(hidden_size=outp, latent_size=params_size[i], evo=evo, residual=False, name='mlp_out_logits_{}_{}'.format(space_name, output_name))
 
-            self.event_size[i], self.step_shape[i] = tf.constant(event_size), tf.constant(list(step_shape[1:-1])+[latent_size])
+            self.event_size[i], self.step_shape[i] = tf.constant(event_size), list(step_shape[1:-1])+[latent_size]
             self.arch_out += "{}{}".format(dist_type, num_components)
 
     def call(self, inputs, batch_size=None, training=None):
-        if batch_size is None: batch_size=tf.constant(1)
+        if batch_size is None: batch_size = 1
         out = tf.cast(inputs, self.compute_dtype)
         if not self.net_attn_io: out = tf.reshape(out, (batch_size, -1))
         out_logits = [None]*self.net_outs
         for i in range(self.net_outs):
-            if self.net_attn_io: out_logits[i] = self.layer_attn_out[i](out) # out_logits[i] = self.layer_attn_out[i](out, num_latents=batch_size*self.event_size[i])
+            if self.net_attn_io: out_logits[i] = self.layer_attn_out[i](out, batch_size=batch_size) # out_logits[i] = self.layer_attn_out[i](out, num_latents=batch_size*self.event_size[i])
             else: out_logits[i] = self.layer_dense_out[i](out)
-            out_logits[i] = tf.reshape(out_logits[i], tf.concat([tf.reshape(batch_size,(1,)), self.step_shape[i]], 0))
+            # out_logits[i] = tf.reshape(out_logits[i], tf.concat([tf.reshape(batch_size,(1,)), self.step_shape[i]], 0))
+            out_logits[i] = tf.reshape(out_logits[i], [batch_size] + self.step_shape[i])
             out_logits[i] = self.layer_out_logits[i](out_logits[i])
         return out_logits
