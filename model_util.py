@@ -53,8 +53,8 @@ def symexp(x): return tf.math.sign(x)*tf.math.expm1(tf.math.abs(x))
 def stats_update(stats_spec, value):
     b1, b1_n, b2, b2_n, dtype, var_ma, var_ema, var_iter, var_sum = stats_spec['b1'], stats_spec['b1_n'], stats_spec['b2'], stats_spec['b2_n'], stats_spec['dtype'], stats_spec['ma'], stats_spec['ema'], stats_spec['iter'], stats_spec['sum']
     one = tf.constant(1, dtype)
-    var_ma.assign(b1 * var_ma + b1_n * value)
-    var_ema.assign(b2 * var_ema + b2_n * (value * value))
+    var_ma.assign_sub(b1_n * (var_ma - value))
+    var_ema.assign_sub(b2_n * (var_ema - (value * value)))
     var_iter.assign_add(one)
     var_sum.assign_add(value)
 def stats_get(stats_spec):
@@ -574,7 +574,8 @@ class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
 
         attn_output, attn_scores = self._compute_attention(query_, key_, value_, attention_mask)
 
-        # TODO add this back in as extra "long term" memory that stays past reset_states
+        # TODO try using tf.norm(attn_scores*value_) instead of just regular scores to sort
+        # TODO add this back in as extra "long term" memory that stays past reset_states # self._mem_long
         # if self._mem_size is not None and store_memory and self._sort_memory and (store_real or not use_img):
         #     drop_off = tf.roll(self._mem_score, shift=-time_size, axis=1)
         #     self._mem_score.assign(drop_off)

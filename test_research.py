@@ -29,6 +29,7 @@ def tfds_scale(serialized_image, features, scale):
     return tf.io.decode_jpeg(serialized_image, ratio=scale)
 
 
+# predict category
 def run1(num_steps, obs_data, actions, net, train=True):
     print("tracing run1"); tf.print("running run1")
     metric_loss = tf.TensorArray(compute_dtype, size=1, dynamic_size=True)
@@ -50,7 +51,7 @@ def run1(num_steps, obs_data, actions, net, train=True):
         metric_loss = metric_loss.write(step, loss)
 
         util.stats_update(net.stats['loss'], loss)
-        ma_loss, _, snr_loss, std_loss = util.stats_get(net.stats['loss'])
+        _, ma_loss, _, snr_loss, std_loss = util.stats_get(net.stats['loss'])
         metric_ma_loss = metric_ma_loss.write(step, ma_loss); metric_snr = metric_snr.write(step, snr_loss); metric_std = metric_std.write(step, std_loss)
 
         if train: net.optimizer['net'].learning_rate = learn_rate * snr_loss**np.e # **3 # _lr-snre
@@ -58,6 +59,7 @@ def run1(num_steps, obs_data, actions, net, train=True):
     metric_loss, metric_ma_loss, metric_snr, metric_std = metric_loss.stack(), metric_ma_loss.stack(), metric_snr.stack(), metric_std.stack()
     return metric_loss, metric_ma_loss, metric_snr, metric_std
 
+# reconstruct
 def run2(num_steps, obs_data, actions, net, train=True):
     print("tracing run2"); tf.print("running run2")
     metric_loss = tf.TensorArray(compute_dtype, size=1, dynamic_size=True)
@@ -82,7 +84,7 @@ def run2(num_steps, obs_data, actions, net, train=True):
         metric_loss = metric_loss.write(step, loss)
 
         util.stats_update(net.stats['loss'], loss)
-        ma_loss, _, snr_loss, std_loss = util.stats_get(net.stats['loss'])
+        _, ma_loss, _, snr_loss, std_loss = util.stats_get(net.stats['loss'])
         metric_ma_loss = metric_ma_loss.write(step, ma_loss); metric_snr = metric_snr.write(step, snr_loss); metric_std = metric_std.write(step, std_loss)
 
         if train: net.optimizer['net'].learning_rate = learn_rate * snr_loss**np.e # **3 # _lr-snre
@@ -160,8 +162,8 @@ with tf.device("/device:{}:1".format(device_type)):
     # run, ylim, out_spec = run1, 10, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':num_cats-1, 'dist_type':'c', 'num_components':num_cats, 'event_shape':(1,), 'event_size':1, 'step_shape':tf.TensorShape((1,1))}]
     # run, ylim, out_spec = run1, 10, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':num_cats-1, 'dist_type':'mx', 'num_components':4, 'event_shape':(1,), 'event_size':1, 'step_shape':tf.TensorShape((1,1))}]
 
-    # run, out_spec = run2, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':255, 'dist_type':'d', 'num_components':0, 'event_shape':(channels,), 'event_size':event_size, 'step_shape':step_shape}]
-    run, out_spec = run2, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':255, 'dist_type':'c', 'num_components':256, 'event_shape':(channels,), 'event_size':event_size, 'step_shape':step_shape}]
+    run, out_spec = run2, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':255, 'dist_type':'d', 'num_components':0, 'event_shape':(channels,), 'event_size':event_size, 'step_shape':step_shape}]
+    # run, out_spec = run2, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':255, 'dist_type':'c', 'num_components':256, 'event_shape':(channels,), 'event_size':event_size, 'step_shape':step_shape}]
     # run, out_spec = run2, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':255, 'dist_type':'mx', 'num_components':4, 'event_shape':(channels,), 'event_size':event_size, 'step_shape':step_shape}]
 
     latent_spec = {'dtype':compute_dtype, 'latent_size':latent_size, 'num_latents':1, 'max_latents':aio_max_latents, 'max_batch_out':1}
