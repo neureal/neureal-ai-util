@@ -23,10 +23,16 @@ float_min_prob = tf.constant(tf.math.log(float_eps), compute_dtype)
 float_eps_max = tf.constant(1.0 / float_eps, compute_dtype)
 tf.keras.backend.set_epsilon(float_eps) # 1e-7 default
 
-scale, ylim, trainS, testS = 1, 10, 'train', 'test'
+num_cats, scale, ylim, trainS, testS, obs_key, action_key, train_actions, test_actions, memory_size, is_image, device = 0, 1, 10, 'train', 'test', 'image', 'label', tf.constant([[0]]), tf.constant([[0]]), None, False, 0
 @tfds.decode.make_decoder()
 def tfds_scale(serialized_image, features, scale):
     return tf.io.decode_jpeg(serialized_image, ratio=scale)
+@tfds.decode.make_decoder(output_dtype=tf.int32)
+def tfds_unicode(text, features):
+    return tf.strings.unicode_decode(text, 'UTF-8')
+@tfds.decode.make_decoder(output_dtype=tf.uint8)
+def tfds_bytes(text, features):
+    return tf.io.decode_raw(text, tf.uint8)
 
 
 # predict category
@@ -93,12 +99,15 @@ def run2(num_steps, obs_data, actions, net, train=True):
     return metric_loss, metric_ma_loss, metric_snr, metric_std
 
 
+
 device_type = 'CPU'
-device_type = 'GPU'
+# device_type, device = 'GPU', 0
 seed0 = False
-net_blocks = 4; net_width = 2048; latent_size = 16; num_heads = 4; latent_dist = 'd'
+net_blocks = 2; net_width = 512; latent_size = 16; num_heads = 4; mem_size = 16; latent_dist = 'd'
 net_lstm = False; net_attn = {'net':True, 'io':True, 'out':True, 'ar':False}; aio_max_latents = 64
 opt_type = 'a'; schedule_type = ''; learn_rate = tf.constant(2e-4, compute_dtype)
+aug_data_pos = True # _aug-pos
+extra_info = '_lr-snre'
 
 # name, num_cats, ylim = 'cifar10', 10, 100 # (50000, 32, 32, 3) (10000 test)
 # name, num_cats, scale, ylim, trainS, testS = 'places365_small', 365, 8, 100, 'train[:262144]', 'test[:49152]' # (1803460, 256, 256, 3) (328500 test) (36500 validation)
@@ -113,22 +122,31 @@ opt_type = 'a'; schedule_type = ''; learn_rate = tf.constant(2e-4, compute_dtype
 # name, num_cats = 'emnist/bymerge', 47 # (697932, 28, 28, 1) (116323 test)
 # name, num_cats = 'emnist/balanced', 47 # (112800, 28, 28, 1) (18800 test)
 # name, num_cats = 'emnist/letters', 37 # (88800, 28, 28, 1) (14800 test)
-name, num_cats, ylim = 'emnist/digits', 10, 25 # (240000, 28, 28, 1) (40000 test)
+# name, num_cats, ylim = 'emnist/digits', 10, 25 # (240000, 28, 28, 1) (40000 test)
 # name, num_cats = 'emnist/mnist', 10 # (60000, 28, 28, 1) (10000 test)
 
-aug_data_pos = True # _aug-pos
-extra_info = '_aug-pos_lr-snre'
+name, obs_key, ylim = 'tiny_shakespeare', 'text', 5 # (1003854, 28, 28, 1) (55770 test)
 
 
-with tf.device("/device:{}:1".format(device_type)):
+with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' else 0))):
     seed = 0 if seed0 else time.time_ns(); tf.random.set_seed(seed)
+    decoders = {'image':tfds_scale(scale),} if scale > 1 else None
 
-    ds = tfds.load(name, batch_size=-1, split=[trainS, testS], decoders={'image':tfds_scale(scale),})
-    # ds, name = tfds.load(name, batch_size=-1, split=['train[:12288]','test[:2048]'], decoders={'image':tfds_scale(scale),}), name+'-lrg'
-    # ds, name = tfds.load(name, batch_size=-1, split=['train[:4096]','test[:1024]'], decoders={'image':tfds_scale(scale),}), name+'-med'
-    # ds, name = tfds.load(name, batch_size=-1, split=['train[:512]','test[:128]'], decoders={'image':tfds_scale(scale),}), name+'-smal'
-    # ds, name = tfds.load(name, batch_size=-1, split=['train[:16]','test[:16]'], decoders={'image':tfds_scale(scale),}), name+'-tiny'
-    train_obs, train_actions, test_obs, test_actions = ds[0]['image'], tf.expand_dims(ds[0]['label'],-1), ds[1]['image'], tf.expand_dims(ds[1]['label'],-1)
+    # text
+    ds = tfds.load(name, batch_size=-1, split=[trainS, testS], decoders={obs_key:tfds_bytes(),})
+    # train_obs, test_obs = tf.expand_dims(ds[0][obs_key][0],-1), tf.expand_dims(ds[1][obs_key][0],-1) # all
+    # train_obs, test_obs = tf.expand_dims(ds[0][obs_key][0][:12288],-1), tf.expand_dims(ds[1][obs_key][0][:2048],-1); name += '-lrg'
+    train_obs, test_obs = tf.expand_dims(ds[0][obs_key][0][:512],-1), tf.expand_dims(ds[1][obs_key][0][:128],-1); name += '-smal'
+    # train_obs, test_obs = tf.expand_dims(ds[0][obs_key][0][:16],-1), tf.expand_dims(ds[1][obs_key][0][:16],-1); name += '-tiny'
+
+    # images
+    # ds = tfds.load(name, batch_size=-1, split=[trainS, testS], decoders=decoders) # all
+    # ds = tfds.load(name, batch_size=-1, split=['train[:12288]','test[:2048]'], decoders=decoders); name += '-lrg'
+    # ds = tfds.load(name, batch_size=-1, split=['train[:4096]','test[:1024]'], decoders=decoders); name += '-med'
+    # ds = tfds.load(name, batch_size=-1, split=['train[:512]','test[:128]'], decoders=decoders); name += '-smal'
+    # ds = tfds.load(name, batch_size=-1, split=['train[:16]','test[:16]'], decoders=decoders); name += '-tiny'
+    # train_obs, train_actions, test_obs, test_actions = ds[0][obs_key], tf.expand_dims(ds[0][action_key],-1), ds[1][obs_key], tf.expand_dims(ds[1][action_key],-1); is_image = True
+
 
     # ds = tfds.as_numpy(tfds.load(name, batch_size=-1))
     # train_obs, train_actions, test_obs, test_actions = ds['train']['image'], np.expand_dims(ds['train']['label'],-1), ds['test']['image'], np.expand_dims(ds['test']['label'],-1)
@@ -148,6 +166,7 @@ with tf.device("/device:{}:1".format(device_type)):
     # train_obs, test_obs = tf.image.resize(train_obs, (32,32), method='nearest'), tf.image.resize(test_obs, (32,32), method='nearest') # _scaled-32px
     # train_obs, test_obs = train_obs.numpy(), test_obs.numpy()
 
+
     num_steps_train, num_steps_test = train_obs.shape[0], test_obs.shape[0]
     obs_space, action_space = train_obs[0], train_actions[0]
     event_shape, event_size, channels, step_shape = obs_space.shape, int(np.prod(obs_space.shape[:-1]).item()), obs_space.shape[-1], tf.TensorShape(train_obs[0:1].shape)
@@ -158,17 +177,17 @@ with tf.device("/device:{}:1".format(device_type)):
     opt_spec = [{'name':'net', 'type':opt_type, 'schedule_type':schedule_type, 'learn_rate':learn_rate, 'float_eps':float_eps, 'num_steps':num_steps_train, 'lr_min':2e-7}]; stats_spec = [{'name':'loss', 'b1':0.99, 'b2':0.99, 'dtype':compute_dtype}]
     inputs = {'obs':[tf.constant(train_obs[0:1])]}; in_spec = [{'space_name':'obs', 'name':'', 'event_shape':event_shape, 'event_size':event_size, 'channels':channels, 'step_shape':step_shape, 'num_latents':num_latents}]
 
-    # run, ylim, out_spec = run1, 10, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':num_cats-1, 'dist_type':'d', 'num_components':0, 'event_shape':(1,), 'event_size':1, 'step_shape':tf.TensorShape((1,1))}]
+    # run, out_spec = run1, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':num_cats-1, 'dist_type':'d', 'num_components':0, 'event_shape':(1,), 'event_size':1, 'step_shape':tf.TensorShape((1,1))}]
     # run, ylim, out_spec = run1, 10, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':num_cats-1, 'dist_type':'c', 'num_components':num_cats, 'event_shape':(1,), 'event_size':1, 'step_shape':tf.TensorShape((1,1))}]
     # run, ylim, out_spec = run1, 10, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':num_cats-1, 'dist_type':'mx', 'num_components':4, 'event_shape':(1,), 'event_size':1, 'step_shape':tf.TensorShape((1,1))}]
 
-    run, out_spec = run2, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':255, 'dist_type':'d', 'num_components':0, 'event_shape':(channels,), 'event_size':event_size, 'step_shape':step_shape}]
-    # run, out_spec = run2, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':255, 'dist_type':'c', 'num_components':256, 'event_shape':(channels,), 'event_size':event_size, 'step_shape':step_shape}]
-    # run, out_spec = run2, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':255, 'dist_type':'mx', 'num_components':4, 'event_shape':(channels,), 'event_size':event_size, 'step_shape':step_shape}]
+    # run, out_spec = run2, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':255, 'dist_type':'d', 'num_components':0, 'event_shape':(channels,), 'event_size':event_size, 'step_shape':step_shape}]
+    run, ylim, out_spec = run2, 10, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':255, 'dist_type':'c', 'num_components':256, 'event_shape':(channels,), 'event_size':event_size, 'step_shape':step_shape}]
+    # run, ylim, out_spec = run2, 10, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':255, 'dist_type':'mx', 'num_components':4, 'event_shape':(channels,), 'event_size':event_size, 'step_shape':step_shape}]
 
     latent_spec = {'dtype':compute_dtype, 'latent_size':latent_size, 'num_latents':1, 'max_latents':aio_max_latents, 'max_batch_out':1}
     # latent_spec.update({'inp':latent_size*4, 'midp':latent_size*2, 'outp':latent_size*4, 'evo':int(latent_size/2)})
-    latent_spec.update({'inp':net_width, 'midp':net_width/2, 'outp':net_width, 'evo':64})
+    latent_spec.update({'inp':net_width, 'midp':int(net_width/2), 'outp':net_width, 'evo':64})
     if latent_dist == 'd': latent_spec.update({'dist_type':'d', 'num_components':latent_size, 'event_shape':(latent_size,)}) # deterministic
     if latent_dist == 'c': latent_spec.update({'dist_type':'c', 'num_components':0, 'event_shape':(latent_size, latent_size)}) # categorical
     if latent_dist == 'mx': latent_spec.update({'dist_type':'mx', 'num_components':int(latent_size/16), 'event_shape':(latent_size,)}) # continuous
@@ -178,14 +197,14 @@ with tf.device("/device:{}:1".format(device_type)):
         num_latents,latent_size,num_heads,latent_dist,learn_rate,num_cats,extra_info,time.strftime("%y-%m-%d-%H-%M-%S"))
 
     ## test net
-    testnet = nets.ArchFull('TEST', inputs, opt_spec, stats_spec, in_spec, out_spec, latent_spec, net_blocks=net_blocks, net_lstm=net_lstm, net_attn=net_attn, num_heads=num_heads, memory_size=None, aug_data_pos=aug_data_pos); outputs = testnet(inputs)
+    testnet = nets.ArchFull('TEST', inputs, opt_spec, stats_spec, in_spec, out_spec, latent_spec, net_blocks=net_blocks, net_lstm=net_lstm, net_attn=net_attn, num_heads=num_heads, memory_size=memory_size, aug_data_pos=aug_data_pos); outputs = testnet(inputs)
     testnet.optimizer_weights = util.optimizer_build(testnet.optimizer['net'], testnet.trainable_variables)
     util.net_build(testnet, initializer)
 
     ## run
     run_fn = tf.function(run, experimental_autograph_options=tf.autograph.experimental.Feature.LISTS); print("RUN {}".format(info))
     plt.figure(num=info, figsize=(34, 18), tight_layout=True); ylim = (0, ylim)
-    rows = (6 if run == run2 else 4); cols = 7
+    rows = (6 if run == run2 and is_image else 4); cols = 7
 
     t1_start = time.perf_counter_ns()
     metric_loss, metric_ma_loss, metric_snr, metric_std = run_fn(num_steps_train, tf.constant(train_obs), tf.constant(train_actions), testnet)
@@ -193,7 +212,8 @@ with tf.device("/device:{}:1".format(device_type)):
     title = "TRAIN    [{}-{}]     total time {}     sec/step {}".format(device_type, tf.keras.backend.floatx(), util.print_time(total_time), total_time/num_steps_train); print(title)
     steps = np.arange(num_steps_train) # , ylim=(0, 10)
     plt.subplot2grid((rows, cols), (0, 0), rowspan=4, colspan=6, xlim=(0, num_steps_train-1), ylim=ylim); plt.plot(steps, metric_loss.numpy(), alpha=0.7, color='lightblue', label='loss'); plt.plot(steps, metric_ma_loss.numpy(), label='ma_loss')
-    plt.plot(steps, metric_std.numpy(), label='std'); plt.plot(steps, metric_snr.numpy(), label='snr'); plt.legend(loc='upper left'); plt.grid(axis='both',alpha=0.3); plt.title(title)
+    # plt.plot(steps, metric_std.numpy(), label='std'); plt.plot(steps, metric_snr.numpy(), label='snr')
+    plt.legend(loc='upper left'); plt.grid(axis='both',alpha=0.3); plt.title(title)
 
     testnet.optimizer['net'].learning_rate = learn_rate
     t1_start = time.perf_counter_ns()
@@ -201,9 +221,11 @@ with tf.device("/device:{}:1".format(device_type)):
     total_time = (time.perf_counter_ns() - t1_start) / 1e9 # seconds
     title = "TEST  {}  {}".format(util.print_time(total_time), total_time/num_steps_test); print(title)
     steps = np.arange(num_steps_test) # , ylim=(0, 10)
-    plt.subplot2grid((rows, cols), (0, 6), rowspan=4, xlim=(0, num_steps_test-1), ylim=ylim); plt.plot(steps, metric_loss.numpy(), alpha=0.7, color='lightblue', label='loss'); plt.plot(steps, metric_ma_loss.numpy(), label='ma_loss'); plt.plot(steps, metric_std.numpy(), label='std'); plt.grid(axis='both',alpha=0.3); plt.title(title)
+    plt.subplot2grid((rows, cols), (0, 6), rowspan=4, xlim=(0, num_steps_test-1), ylim=ylim); plt.plot(steps, metric_loss.numpy(), alpha=0.7, color='lightblue', label='loss'); plt.plot(steps, metric_ma_loss.numpy(), label='ma_loss')
+    # plt.plot(steps, metric_std.numpy(), label='std')
+    plt.grid(axis='both',alpha=0.3); plt.title(title)
 
-if run == run2:
+if run == run2 and is_image:
     rnd = np.random.randint(1,len(test_obs)-1,5)
     itms = [train_obs[0:1], test_obs[0:1], test_obs[rnd[0]:rnd[0]+1], test_obs[rnd[1]:rnd[1]+1], test_obs[rnd[2]:rnd[2]+1], test_obs[rnd[3]:rnd[3]+1], test_obs[rnd[4]:rnd[4]+1]]
     for i in range(len(itms)):
