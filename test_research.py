@@ -60,7 +60,7 @@ def run1(num_steps, obs_data, actions, net, train=True):
         _, ma_loss, _, snr_loss, std_loss = util.stats_get(net.stats['loss'])
         metric_ma_loss = metric_ma_loss.write(step, ma_loss); metric_snr = metric_snr.write(step, snr_loss); metric_std = metric_std.write(step, std_loss)
 
-        if train: net.optimizer['net'].learning_rate = learn_rate * snr_loss**np.e # **3 # _lr-snre
+        if train: net.optimizer['net'].learning_rate = learn_rate * snr_loss**np.e # **np.e # _lr-snre
 
     metric_loss, metric_ma_loss, metric_snr, metric_std = metric_loss.stack(), metric_ma_loss.stack(), metric_snr.stack(), metric_std.stack()
     return metric_loss, metric_ma_loss, metric_snr, metric_std
@@ -93,7 +93,7 @@ def run2(num_steps, obs_data, actions, net, train=True):
         _, ma_loss, _, snr_loss, std_loss = util.stats_get(net.stats['loss'])
         metric_ma_loss = metric_ma_loss.write(step, ma_loss); metric_snr = metric_snr.write(step, snr_loss); metric_std = metric_std.write(step, std_loss)
 
-        if train: net.optimizer['net'].learning_rate = learn_rate * snr_loss**np.e # **3 # _lr-snre
+        if train: net.optimizer['net'].learning_rate = learn_rate * snr_loss**np.e # **np.e # _lr-snre
 
     metric_loss, metric_ma_loss, metric_snr, metric_std = metric_loss.stack(), metric_ma_loss.stack(), metric_snr.stack(), metric_std.stack()
     return metric_loss, metric_ma_loss, metric_snr, metric_std
@@ -103,7 +103,7 @@ def run2(num_steps, obs_data, actions, net, train=True):
 device_type = 'CPU'
 # device_type, device = 'GPU', 0
 seed0 = False
-net_blocks = 2; net_width = 512; latent_size = 16; num_heads = 4; mem_size = 16; latent_dist = 'd'
+net_blocks = 4; net_width = 2048; latent_size = 16; num_heads = 4; mem_size = 16; latent_dist = 'd'
 net_lstm = False; net_attn = {'net':True, 'io':True, 'out':True, 'ar':False}; aio_max_latents = 64
 opt_type = 'a'; schedule_type = ''; learn_rate = tf.constant(2e-4, compute_dtype)
 aug_data_pos = True # _aug-pos
@@ -134,9 +134,9 @@ with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' 
 
     # text
     ds = tfds.load(name, batch_size=-1, split=[trainS, testS], decoders={obs_key:tfds_bytes(),})
-    # train_obs, test_obs = tf.expand_dims(ds[0][obs_key][0],-1), tf.expand_dims(ds[1][obs_key][0],-1) # all
-    # train_obs, test_obs = tf.expand_dims(ds[0][obs_key][0][:12288],-1), tf.expand_dims(ds[1][obs_key][0][:2048],-1); name += '-lrg'
-    train_obs, test_obs = tf.expand_dims(ds[0][obs_key][0][:512],-1), tf.expand_dims(ds[1][obs_key][0][:128],-1); name += '-smal'
+    train_obs, test_obs = tf.expand_dims(ds[0][obs_key][0],-1), tf.expand_dims(ds[1][obs_key][0],-1) # all
+    # train_obs, test_obs = tf.expand_dims(ds[0][obs_key][0][:524288],-1), tf.expand_dims(ds[1][obs_key][0][:32768],-1); name += '-lrg'
+    # train_obs, test_obs = tf.expand_dims(ds[0][obs_key][0][:12288],-1), tf.expand_dims(ds[1][obs_key][0][:2048],-1); name += '-smal'
     # train_obs, test_obs = tf.expand_dims(ds[0][obs_key][0][:16],-1), tf.expand_dims(ds[1][obs_key][0][:16],-1); name += '-tiny'
 
     # images
@@ -181,8 +181,8 @@ with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' 
     # run, ylim, out_spec = run1, 10, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':num_cats-1, 'dist_type':'c', 'num_components':num_cats, 'event_shape':(1,), 'event_size':1, 'step_shape':tf.TensorShape((1,1))}]
     # run, ylim, out_spec = run1, 10, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':num_cats-1, 'dist_type':'mx', 'num_components':4, 'event_shape':(1,), 'event_size':1, 'step_shape':tf.TensorShape((1,1))}]
 
-    # run, out_spec = run2, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':255, 'dist_type':'d', 'num_components':0, 'event_shape':(channels,), 'event_size':event_size, 'step_shape':step_shape}]
-    run, ylim, out_spec = run2, 10, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':255, 'dist_type':'c', 'num_components':256, 'event_shape':(channels,), 'event_size':event_size, 'step_shape':step_shape}]
+    run, out_spec = run2, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':255, 'dist_type':'d', 'num_components':0, 'event_shape':(channels,), 'event_size':event_size, 'step_shape':step_shape}]
+    # run, ylim, out_spec = run2, 10, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':255, 'dist_type':'c', 'num_components':256, 'event_shape':(channels,), 'event_size':event_size, 'step_shape':step_shape}]
     # run, ylim, out_spec = run2, 10, [{'space_name':'net', 'name':'', 'dtype':tf.int32, 'dtype_out':compute_dtype, 'min':0, 'max':255, 'dist_type':'mx', 'num_components':4, 'event_shape':(channels,), 'event_size':event_size, 'step_shape':step_shape}]
 
     latent_spec = {'dtype':compute_dtype, 'latent_size':latent_size, 'num_latents':1, 'max_latents':aio_max_latents, 'max_batch_out':1}
@@ -203,6 +203,7 @@ with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' 
 
     ## run
     run_fn = tf.function(run, experimental_autograph_options=tf.autograph.experimental.Feature.LISTS); print("RUN {}".format(info))
+    import matplotlib as mpl; mpl.rcParams['agg.path.chunksize'] = 50000
     plt.figure(num=info, figsize=(34, 18), tight_layout=True); ylim = (0, ylim)
     rows = (6 if run == run2 and is_image else 4); cols = 7
 
