@@ -314,17 +314,17 @@ class Net(tf.keras.layers.Layer):
         outp, midp, evo, latent_size = latent_spec['outp'], latent_spec['midp'], latent_spec['evo'], latent_spec['latent_size']
         self.obs_latent, self.net_blocks, self.net_attn, self.net_lstm, self.net_attn_io = obs_latent, net_blocks, net_attn, net_lstm, net_attn_io
 
-        self.layer_attn, self.layer_lstm, self.layer_mlp = [], [], []
+        self.layer_attn, self.layer_lstm, self.layer_dense, self.layer_mlp = [], [], [], []
         for i in range(net_blocks):
             if net_attn:
                 mem_active = None if net_attn_ar and i > 0 else memory_size
                 self.layer_attn += [util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, memory_size=mem_active, residual=True, name='attn_{:02d}'.format(i))]
                 self.layer_mlp += [util.MLPBlock(hidden_size=midp, latent_size=latent_size, evo=None, residual=True, name='mlp_{:02d}'.format(i))]
-            elif net_lstm:
+            if net_lstm:
                 # self.layer_lstm += [tf.keras.layers.LSTM(latent_size, activation=util.EvoNormS0(evo), use_bias=False, return_sequences=True, stateful=True, name='lstm_{:02d}'.format(i))]
                 self.layer_lstm += [tf.keras.layers.LSTM(latent_size, return_sequences=True, stateful=True, name='lstm_{:02d}'.format(i))] # CUDA
-                self.layer_mlp += [tf.keras.layers.Dense(latent_size, name='dense_{:02d}'.format(i))]
-            else: self.layer_mlp += [util.MLPBlock(hidden_size=midp, latent_size=latent_size, evo=evo, residual=False, name='mlp_{:02d}'.format(i))]
+                self.layer_dense += [tf.keras.layers.Dense(latent_size, name='dense_{:02d}'.format(i))]
+            if not net_attn and not net_lstm: self.layer_mlp += [util.MLPBlock(hidden_size=midp, latent_size=latent_size, evo=evo, residual=False, name='mlp_{:02d}'.format(i))]
 
         self.num_latents, self.dist_out = latent_spec['num_latents'], latent_spec['dist_type'] != 'd'
         params_size, self.dist = util.distribution(latent_spec)
@@ -339,9 +339,14 @@ class Net(tf.keras.layers.Layer):
         out = tf.cast(inputs, self.compute_dtype)
         if batch_size is None: out = tf.expand_dims(out, axis=0)
         for i in range(self.net_blocks):
-            if self.net_attn: out = self.layer_attn[i](out, auto_mask=training, store_memory=store_memory, use_img=use_img, store_real=store_real)
-            if self.net_lstm: out = self.layer_lstm[i](out, training=training)
-            out = self.layer_mlp[i](out)
+            if self.net_attn:
+                out = self.layer_attn[i](out, auto_mask=training, store_memory=store_memory, use_img=use_img, store_real=store_real)
+                out = self.layer_mlp[i](out)
+            if self.net_lstm:
+                out = self.layer_lstm[i](out, training=training)
+                out = self.layer_dense[i](out)
+            if not self.net_attn and not self.net_lstm:
+                out = self.layer_mlp[i](out)
         if batch_size is None: out = tf.squeeze(out, axis=0)
         if self.obs_latent:
             if self.net_attn_io: out = self.layer_attn_out(out)
