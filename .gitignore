@@ -189,4 +189,5 @@ render/
 *.h5
 *.tflite
 output/
+output_util/
 tf-data-models-local/
