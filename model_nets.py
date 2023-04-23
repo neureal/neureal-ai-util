@@ -357,8 +357,8 @@ class Net(tf.keras.layers.Layer):
 class Out(tf.keras.layers.Layer):
     def __init__(self, latent_spec, spec_out, net_attn_io=False, num_heads=1):
         super(Out, self).__init__(name='out')
-        outp, evo, latent_size, max_batch_out = latent_spec['outp'], latent_spec['evo'], latent_spec['latent_size'], latent_spec['max_batch_out']
-        self.net_attn_io = net_attn_io
+        outp, evo, latent_size = latent_spec['outp'], latent_spec['evo'], latent_spec['latent_size']
+        self.net_attn_io, self.seq_size_out = net_attn_io, latent_spec['seq_size_out']
 
         self.net_outs = len(spec_out)
         self.event_size, self.step_shape, params_size, self.dist, self.layer_attn_out, self.layer_dense_out, self.layer_out_logits, self.arch_out = [None]*self.net_outs, [None]*self.net_outs, [None]*self.net_outs, [None]*self.net_outs, [None]*self.net_outs, [None]*self.net_outs, [None]*self.net_outs, "Ö"
@@ -366,7 +366,7 @@ class Out(tf.keras.layers.Layer):
             space_name, output_name, dist_type, num_components, event_size, step_shape = spec_out[i]['space_name'], spec_out[i]['name'], spec_out[i]['dist_type'], spec_out[i]['num_components'], spec_out[i]['event_size'], spec_out[i]['step_shape']
 
             params_size[i], self.dist[i] = util.distribution(spec_out[i])
-            if net_attn_io: self.layer_attn_out[i] = util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, norm=False, residual=False, cross_type=1, num_latents=max_batch_out*event_size, channels=latent_size, name='attn_out_{}_{}'.format(space_name, output_name))
+            if net_attn_io: self.layer_attn_out[i] = util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, norm=False, residual=False, cross_type=1, num_latents=self.seq_size_out*event_size, channels=latent_size, name='attn_out_{}_{}'.format(space_name, output_name))
             else: self.layer_dense_out[i] = tf.keras.layers.Dense(event_size*latent_size, name='dense_out_{}_{}'.format(space_name, output_name))
             self.layer_out_logits[i] = util.MLPBlock(hidden_size=outp, latent_size=params_size[i], evo=evo, residual=False, name='mlp_out_logits_{}_{}'.format(space_name, output_name))
 
@@ -382,6 +382,6 @@ class Out(tf.keras.layers.Layer):
             if self.net_attn_io: out_logits[i] = self.layer_attn_out[i](out, batch_size=batch_size) # out_logits[i] = self.layer_attn_out[i](out, num_latents=batch_size*self.event_size[i])
             else: out_logits[i] = self.layer_dense_out[i](out)
             # out_logits[i] = tf.reshape(out_logits[i], tf.concat([tf.reshape(batch_size,(1,)), self.step_shape[i]], 0))
-            out_logits[i] = tf.reshape(out_logits[i], [batch_size] + self.step_shape[i])
+            out_logits[i] = tf.reshape(out_logits[i], [batch_size*self.seq_size_out] + self.step_shape[i])
             out_logits[i] = self.layer_out_logits[i](out_logits[i])
         return out_logits
