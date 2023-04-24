@@ -24,7 +24,7 @@ float_min_prob = tf.constant(tf.math.log(float_eps), compute_dtype)
 float_eps_max = tf.constant(1.0 / float_eps, compute_dtype)
 tf.keras.backend.set_epsilon(float_eps) # 1e-7 default
 
-target_size, num_cats, scale, trainS, testS, obs_key, action_key, name_size, train_act, test_act, is_image, is_text, decoders, loaded_model = 1, 256, 1, 'train', 'test', 'image', 'label', '', tf.constant([[0]]), tf.constant([[0]]), False, False, None, False
+seq_size, num_cats, scale, trainS, testS, obs_key, action_key, name_size, train_act, test_act, is_image, is_text, decoders, loaded_model = 1, 256, 1, 'train', 'test', 'image', 'label', '', tf.constant([[0]]), tf.constant([[0]]), False, False, None, False
 @tfds.decode.make_decoder()
 def tfds_scale(serialized_image, features, scale):
     return tf.io.decode_jpeg(serialized_image, ratio=scale)
@@ -43,25 +43,25 @@ def decode_to_bytes(text):
     return text
 
 
-def run_graph(num_steps, obs_data, actions, net, target_size=1, train=True):
+def run_graph(num_steps, obs_data, actions, net, seq_size, train=True):
     print("tracing"); tf.print("running")
-    metric_loss = tf.TensorArray(compute_dtype, size=1, dynamic_size=True)
-    metric_ma_loss = tf.TensorArray(compute_dtype, size=1, dynamic_size=True)
-    metric_snr = tf.TensorArray(compute_dtype, size=1, dynamic_size=True)
-    metric_std = tf.TensorArray(compute_dtype, size=1, dynamic_size=True)
-    metric_diff = tf.TensorArray(compute_dtype, size=1, dynamic_size=True)
-    metric_ma_diff = tf.TensorArray(compute_dtype, size=1, dynamic_size=True)
+    metric_loss = tf.TensorArray(compute_dtype, size=num_steps, dynamic_size=False, infer_shape=False, element_shape=())
+    metric_ma_loss = tf.TensorArray(compute_dtype, size=num_steps, dynamic_size=False, infer_shape=False, element_shape=())
+    metric_snr = tf.TensorArray(compute_dtype, size=num_steps, dynamic_size=False, infer_shape=False, element_shape=())
+    metric_std = tf.TensorArray(compute_dtype, size=num_steps, dynamic_size=False, infer_shape=False, element_shape=())
+    metric_diff = tf.TensorArray(compute_dtype, size=num_steps, dynamic_size=False, infer_shape=False, element_shape=())
+    metric_ma_diff = tf.TensorArray(compute_dtype, size=num_steps, dynamic_size=False, infer_shape=False, element_shape=())
 
     action_size = tf.reduce_prod(tf.shape(actions[0]))
     for step in tf.range(num_steps, dtype=tf.int32):
         inputs = {'obs':[obs_data[step:step+1]]}
-        targets = actions[step:step+target_size]; out_size = tf.shape(targets)[0]
+        targets = actions[step:step+seq_size]; out_size = tf.shape(targets)[0]
 
         with tf.GradientTape() as tape:
             logits = net(inputs); dist = net.dist[0](logits[0][:out_size])
             loss = util.loss_likelihood(dist, targets)
             if out_spec[0]['dist_type'] == 'c':
-                logit_scale = tf.reduce_mean(tf.math.abs(logits[0])) # _loss-logits
+                logit_scale = tf.reduce_mean(tf.math.abs(logits[0][:out_size])) # _loss-logits
                 if logit_scale < 15: logit_scale = tf.constant(0,compute_dtype)
                 loss = loss + logit_scale
         if train:
@@ -87,7 +87,7 @@ run_fn = tf.function(run_graph, experimental_autograph_options=tf.autograph.expe
 
 
 device_type = 'CPU'
-# device_type = 'GPU' # use for images, even run1
+# device_type = 'GPU' # use for images (even run1)
 load_model, save_model = False, False
 max_episodes = 1; max_steps = 256; mem_img_size = 4; memory_size = 256
 seed0 = False
@@ -95,7 +95,7 @@ net_blocks = 4; net_width = 2048; latent_size = 16; num_heads = 4; latent_dist =
 net_lstm = False; net_attn = {'net':True, 'io':True, 'out':True, 'ar':True}; aio_max_latents = 16
 opt_type = 'a'; schedule_type = ''; learn_rate = tf.constant(2e-4, compute_dtype)
 aug_data_pos = True # _aug-pos
-machine, device, extra_info = 'dev', 0, '_lr-snre'
+machine, device, extra_info = 'dev', 0, '' # _aug-pos _lr-snre
 
 
 with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' else 0))):
@@ -153,7 +153,7 @@ with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' 
         ## set text run type
         # run = 'runT1'; memory_size = None; train_act, test_act = train_obs, test_obs ## reconstruct text
         # run = 'runT2' ## predict next text
-        run = 'runT3'; target_size = mem_img_size; train_act, test_act = train_obs, test_obs ## predict next text trajectory
+        run = 'runT3'; seq_size = mem_img_size; train_act, test_act = train_obs, test_obs ## predict next text trajectory
 
         ## set image run type
         # run = 'run1'; memory_size = None ## predict image category
@@ -171,9 +171,9 @@ with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' 
         out_spec_dtype = tf.uint8 if num_cats <= 256 else tf.int32
 
         ## set out_spec dist type
-        # ylim, out_spec = ylimD, [{'space_name':'net', 'name':'', 'dtype':out_spec_dtype, 'dtype_out':compute_dtype, 'min':0, 'max':num_cats-1, 'dist_type':'d', 'num_components':0, 'event_shape':(act_channels,), 'event_size':act_event_size, 'step_shape':act_step_shape}]
-        ylim, out_spec = 5, [{'space_name':'net', 'name':'', 'dtype':out_spec_dtype, 'dtype_out':compute_dtype, 'min':0, 'max':num_cats-1, 'dist_type':'c', 'num_components':num_cats, 'event_shape':(act_channels,), 'event_size':act_event_size, 'step_shape':act_step_shape}]
-        # ylim, out_spec = 5, [{'space_name':'net', 'name':'', 'dtype':out_spec_dtype, 'dtype_out':compute_dtype, 'min':0, 'max':num_cats-1, 'dist_type':'mx', 'num_components':4, 'event_shape':(act_channels,), 'event_size':act_event_size, 'step_shape':act_step_shape}]
+        # ylim, out_spec = ylimD, [{'space_name':'net', 'name':'', 'dtype':out_spec_dtype, 'dtype_out':compute_dtype, 'min':0, 'max':num_cats-1, 'dist_type':'d', 'num_components':0, 'event_shape':(act_channels,), 'event_size':act_event_size, 'step_shape':act_step_shape, 'seq_size_out':seq_size}]
+        ylim, out_spec = 5, [{'space_name':'net', 'name':'', 'dtype':out_spec_dtype, 'dtype_out':compute_dtype, 'min':0, 'max':num_cats-1, 'dist_type':'c', 'num_components':num_cats, 'event_shape':(act_channels,), 'event_size':act_event_size, 'step_shape':act_step_shape, 'seq_size_out':seq_size}]
+        # ylim, out_spec = 5, [{'space_name':'net', 'name':'', 'dtype':out_spec_dtype, 'dtype_out':compute_dtype, 'min':0, 'max':num_cats-1, 'dist_type':'mx', 'num_components':4, 'event_shape':(act_channels,), 'event_size':act_event_size, 'step_shape':act_step_shape, 'seq_size_out':seq_size}]
 
 
 
@@ -181,7 +181,7 @@ with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' 
         opt_spec = [{'name':'net', 'type':opt_type, 'schedule_type':schedule_type, 'learn_rate':learn_rate, 'float_eps':float_eps, 'num_steps':num_steps_train, 'lr_min':2e-7}]; stats_spec = [{'name':'loss', 'b1':0.99, 'b2':0.99, 'dtype':compute_dtype},{'name':'diff', 'b1':0.99, 'b2':0.99, 'dtype':compute_dtype}]
         inputs = {'obs':[tf.constant(train_obs[0:1])]}; in_spec = [{'space_name':'obs', 'name':'', 'event_shape':obs_event_shape, 'event_size':obs_event_size, 'channels':obs_channels, 'step_shape':obs_step_shape, 'num_latents':num_latents}]
 
-        latent_spec = {'dtype':compute_dtype, 'latent_size':latent_size, 'num_latents':1, 'max_latents':aio_max_latents, 'seq_size_out':target_size}
+        latent_spec = {'dtype':compute_dtype, 'latent_size':latent_size, 'num_latents':1, 'max_latents':aio_max_latents}
         # latent_spec.update({'inp':latent_size*4, 'midp':latent_size*2, 'outp':latent_size*4, 'evo':int(latent_size/2)})
         latent_spec.update({'inp':net_width, 'midp':int(net_width/2), 'outp':net_width, 'evo':64})
         if latent_dist == 'd': latent_spec.update({'dist_type':'d', 'num_components':latent_size, 'event_shape':(latent_size,)}) # deterministic
@@ -210,7 +210,7 @@ with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' 
         if is_image and run in ('run2','run3'): rows += 4
 
         t1_start = time.perf_counter_ns()
-        metric_loss, metric_ma_loss, metric_snr, metric_std, metric_diff, metric_ma_diff = run_fn(num_steps_train, tf.constant(train_obs), tf.constant(train_act), testnet, target_size=target_size)
+        metric_loss, metric_ma_loss, metric_snr, metric_std, metric_diff, metric_ma_diff = run_fn(num_steps_train, tf.constant(train_obs), tf.constant(train_act), testnet, seq_size=seq_size, train=True)
         total_time = (time.perf_counter_ns() - t1_start) / 1e9 # seconds
         title = "TRAIN    [{}-{}]     total time {}     sec/step {}      {}-{}".format(device_type, tf.keras.backend.floatx(), util.print_time(total_time), total_time/num_steps_train, testnet.arch_desc_file, ('load' if loaded_model else 'new')); print(title)
         steps = np.arange(num_steps_train) # ylim=ylim yscale='log'
@@ -218,10 +218,10 @@ with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' 
         plt.subplot2grid((rows, cols), (4, 0), rowspan=4, colspan=6, xlim=(0, num_steps_train-1), ylim=ylimD); plt.plot(steps, metric_diff.numpy(), alpha=0.7, color='lightblue', label='diff'); plt.plot(steps, metric_ma_diff.numpy(), label='ma_diff'); plt.legend(loc='upper left'); plt.grid(axis='both',alpha=0.3)
         # plt.subplot2grid((rows, cols), (8, 0), rowspan=1, colspan=6, xlim=(0, num_steps_train-1), ylim=(0,1)); plt.plot(steps, metric_snr.numpy(), label='snr'); plt.grid(axis='both',alpha=0.3)
 
-        testnet.optimizer['net'].learning_rate = learn_rate
-        # testnet.optimizer['net'].beta_1 = tf.constant(0.9,compute_dtype)
+        testnet.optimizer['net'].learning_rate = learn_rate # _lr-snre
+        # testnet.optimizer['net'].beta_1 = tf.constant(0.9,compute_dtype) # _opt-bd
         t1_start = time.perf_counter_ns()
-        metric_loss, metric_ma_loss, metric_snr, metric_std, metric_diff, metric_ma_diff = run_fn(num_steps_test, tf.constant(test_obs), tf.constant(test_act), testnet, target_size=target_size, train=False)
+        metric_loss, metric_ma_loss, metric_snr, metric_std, metric_diff, metric_ma_diff = run_fn(num_steps_test, tf.constant(test_obs), tf.constant(test_act), testnet, seq_size=seq_size, train=False)
         total_time = (time.perf_counter_ns() - t1_start) / 1e9 # seconds
         title = "TEST  {}  {}".format(util.print_time(total_time), total_time/num_steps_test); print(title)
         steps = np.arange(num_steps_test) # ylim=ylim yscale='log'

@@ -496,7 +496,7 @@ class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
 
     def call(self, value, attention_mask=None, auto_mask=None, store_memory=True, use_img=False, store_real=False, num_latents=None, batch_size=None):
         if batch_size is None: batch_size = 1
-        latent_size = value.shape[-1]
+        latent_size = tf.shape(value)[-1]
         if self._cross_type:
             # value[0](batch) = time dim, value[1:-2] = space/feat dim, value[-1] = channel dim
             value = tf.reshape(value, (batch_size, -1, latent_size))
