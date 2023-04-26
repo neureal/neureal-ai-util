@@ -122,7 +122,7 @@ with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' 
     # ## set images
     # # name, num_cats = 'cifar10', 10 # (50000, 32, 32, 3) (10000 test)
     # # name, num_cats, scale = 'places365_small', 365, 8; trainS, testS = 'train[:262144]', 'test[:49152]' # (1803460, 256, 256, 3) (328500 test) (36500 validation) # test cats == -1
-    # # name, num_cats, scale = 'places365_small', 365, 8; trainS, testS = 'train[:262144]', 'train[262144:262144+49152]' # (1803460, 256, 256, 3) (328500 test) (36500 validation)
+    # # name, num_cats, scale = 'places365_small', 365, 8; trainS, testS = 'train[:{}]'.format(262144), 'train[{}:{}]'.format(262144, 262144+49152) # (1803460, 256, 256, 3) (328500 test) (36500 validation)
     # # name, num_cats = 'svhn_cropped', 10 # (73257, 32, 32, 3) (26032 test) (531131 extra)
     # # name, num_cats = 'quickdraw_bitmap', 345; test_split = 40426266 # (50426266, 28, 28, 1) (0 test)
     # # name, num_cats = 'patch_camelyon', 2 # (262144, 96, 96, 3) (32768 test) (32768 validation)
@@ -167,6 +167,8 @@ with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' 
         obs_event_shape, obs_event_size, obs_channels, obs_step_shape = obs_space.shape, int(np.prod(obs_space.shape[:-1]).item()), obs_space.shape[-1], tf.TensorShape(train_obs[0:1].shape)
         act_event_shape, act_event_size, act_channels, act_step_shape = action_space.shape, int(np.prod(action_space.shape[:-1]).item()), action_space.shape[-1], tf.TensorShape(train_act[0:1].shape)
         num_latents = aio_max_latents if obs_event_size > aio_max_latents else obs_event_size
+        if num_latents == 1 and memory_size is not None: net_attn.update({'ar':False}) # attn makes no sense w/1 latent
+        if num_latents == 1 and memory_size is None: net_lstm = False; net_attn.update({'net':False, 'out':False, 'ar':False})
         ylimD = min(int(num_cats/2),100)
         out_spec_dtype = tf.uint8 if num_cats <= 256 else tf.int32
 
@@ -189,9 +191,9 @@ with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' 
         if latent_dist == 'mx': latent_spec.update({'dist_type':'mx', 'num_components':int(latent_size/16), 'event_shape':(latent_size,)}) # continuous
 
 
-        info = "data-{}{}_{}-a{}_{}{}{}_O{}{}_net{}-{}{}{}{}{}{}_lat{}x{}h{}-{}_lr{:.0e}_Ö{}{}{}_{}".format(name.replace('_','').replace('/','-').replace(':','-'),name_size,machine,device,run,out_spec[0]['dist_type'],('_seed0' if seed0 else ''),opt_type,('' if schedule_type=='' else '-'+schedule_type),net_blocks,net_width,
+        info = "data-{}{}_{}-a{}_{}{}{}_O{}{}_net{}-{}{}{}{}{}{}_lat{}x{}h{}-{}_lr{:.0e}_Ö{}{}{}{}_{}".format(name.replace('_','').replace('/','-').replace(':','-'),name_size,machine,device,run,out_spec[0]['dist_type'],('_seed0' if seed0 else ''),opt_type,('' if schedule_type=='' else '-'+schedule_type),net_blocks,net_width,
             ('-lstm' if net_lstm else ''),('-attn' if net_attn['net'] else ''),('-ar' if net_attn['net'] and net_attn['ar'] and memory_size is not None else ''),('-io' if net_attn['io'] else ''),('-out' if net_attn['out'] else ''),
-            num_latents,latent_size,num_heads,latent_dist,learn_rate,num_cats,('_mem'+str(memory_size) if net_attn['net'] and memory_size is not None else ''),extra_info,time.strftime("%y-%m-%d-%H-%M-%S"))
+            num_latents,latent_size,num_heads,latent_dist,learn_rate,num_cats,('_mem'+str(memory_size) if net_attn['net'] and memory_size is not None else ''),('-img'+str(mem_img_size) if seq_size > 1 else ''),extra_info,time.strftime("%y-%m-%d-%H-%M-%S"))
 
         ## test net
         testnet = nets.ArchFull('TEST', inputs, opt_spec, stats_spec, in_spec, out_spec, latent_spec, net_blocks=net_blocks, net_lstm=net_lstm, net_attn=net_attn, num_heads=num_heads, memory_size=memory_size, aug_data_pos=aug_data_pos); outputs = testnet(inputs)
@@ -231,7 +233,7 @@ with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' 
 
 
         if is_text and run in ('runT2','runT3'):
-            testnet.reset_states()
+            # testnet.reset_states()
             out = train_obs[0:1]
             text = b''
             for i in range(max_steps):

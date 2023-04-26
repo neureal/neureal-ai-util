@@ -428,7 +428,6 @@ class MixtureLogistic(tfp.layers.DistributionLambda):
 
 
 
-from tensorflow.python.ops import special_math_ops
 class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
     def __init__(self, latent_size, num_heads=1, memory_size=None, sort_memory=False, norm=False, hidden_size=None, evo=None, residual=True, use_bias=False, cross_type=None, num_latents=None, channels=None, init_zero=None, save_attn_scores=False, **kwargs): # cross_type: 1 = input, 2 = output
         key_dim = int(channels/num_heads) if cross_type == 2 else int(latent_size/num_heads)
@@ -444,8 +443,8 @@ class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
             self._layer_dense_key_in = tf.keras.layers.Dense(hidden_size, activation=EvoNormS0(evo), use_bias=False, name='_dense_key_in')
             self._layer_dense_value_in = tf.keras.layers.Dense(hidden_size, activation=EvoNormS0(evo), use_bias=False, name='_dense_value_in')
 
-        # query_scale = 1.0 / tf.math.sqrt(tf.cast(self._key_dim, dtype=self.compute_dtype))
-        # self._query_scale = tf.identity(query_scale)
+        query_scale = 1.0 / tf.math.sqrt(tf.cast(self._key_dim, dtype=self.compute_dtype))
+        self._query_scale = tf.identity(query_scale)
 
         if cross_type: # CrossAttention
             if init_zero is None:
@@ -488,10 +487,10 @@ class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
             self._mem_score = tf.Variable(self._mem_score_zero, trainable=False, name='mem_score')
 
     def _compute_attention(self, query, key, value, attention_mask=None):
-        # query = tf.math.multiply(query, self._query_scale)
-        attn_scores = special_math_ops.einsum(self._dot_product_equation, key, query)
+        query = tf.math.multiply(query, self._query_scale)
+        attn_scores = tf.einsum(self._dot_product_equation, key, query)
         attn_scores = self._masked_softmax(attn_scores, attention_mask) # TODO can I replace softmax here with somthing more log likelihood related? (ie continuous attn)
-        attn_output = special_math_ops.einsum(self._combine_equation, attn_scores, value)
+        attn_output = tf.einsum(self._combine_equation, attn_scores, value)
         return attn_output, attn_scores
 
     def call(self, value, attention_mask=None, auto_mask=None, store_memory=True, use_img=False, store_real=False, num_latents=None, batch_size=None):
@@ -628,6 +627,7 @@ class MLPBlock(tf.keras.layers.Layer):
         else: self._layer_dense = tf.keras.layers.Dense(hidden_size, activation=EvoNormS0(evo), use_bias=False, name='_dense')
         self._layer_dense_latent = tf.keras.layers.Dense(latent_size, name='_dense_latent')
         self._residual = residual
+        self.latent_scale = latent_size / hidden_size
 
     def build(self, input_shape):
         if self._residual: self._residual_amt = tf.Variable(0.0, dtype=self.compute_dtype, trainable=True, name='residual') # ReZero
@@ -635,5 +635,6 @@ class MLPBlock(tf.keras.layers.Layer):
     def call(self, input):
         out = self._layer_dense(input)
         out = self._layer_dense_latent(out)
+        out = out * self.latent_scale
         if self._residual: out = input + out * self._residual_amt # Rezero
         return out
