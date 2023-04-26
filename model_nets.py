@@ -9,7 +9,7 @@ class ArchFull(tf.keras.Model):
         super(ArchFull, self).__init__(name=name)
         self.inp = In(latent_spec, spec_in, obs_latent=obs_latent, net_attn_io=net_attn['io'], num_heads=num_heads, aug_data_pos=aug_data_pos)
         self.net = Net(latent_spec, obs_latent=obs_latent, net_blocks=net_blocks, net_lstm=net_lstm, net_attn=net_attn['net'], net_attn_io=net_attn['io'], net_attn_ar=net_attn['ar'], num_heads=num_heads, memory_size=memory_size)
-        self.out = Out(latent_spec, spec_out, net_attn_io=net_attn['out'], num_heads=num_heads, memory_size=memory_size)
+        self.out = Out(latent_spec, spec_out, net_attn_io=net_attn['out'], num_heads=num_heads)
         self.dist = self.out.dist
         self.inp_subs = [sm for sm in self.inp.submodules if sm.name.startswith(('dense_','mlp_','attn_','lstm_'))]
         self.net_subs = [sm for sm in self.net.submodules if sm.name.startswith(('dense_','mlp_','attn_','lstm_'))]
@@ -117,7 +117,7 @@ class ArchGen(tf.keras.Model):
         # self.layer_mlp_in = util.MLPBlock(hidden_size=256, latent_size=latent_size, evo=None, residual=True, name='mlp_in')
 
         self.net = Net(latent_spec, obs_latent=False, net_blocks=net_blocks, net_lstm=net_lstm, net_attn=net_attn['net'], net_attn_io=net_attn['io'], net_attn_ar=net_attn['ar'], num_heads=num_heads, memory_size=memory_size)
-        self.out = Out(latent_spec, spec_out, net_attn_io=net_attn['out'], num_heads=num_heads, memory_size=memory_size)
+        self.out = Out(latent_spec, spec_out, net_attn_io=net_attn['out'], num_heads=num_heads)
         self.dist = self.out.dist
         self.net_subs = [sm for sm in self.net.submodules if sm.name.startswith(('dense_','mlp_','attn_','lstm_'))]
         self.out_subs = [sm for sm in self.out.submodules if sm.name.startswith(('dense_','mlp_','attn_','lstm_'))]
@@ -353,10 +353,10 @@ class Net(tf.keras.layers.Layer):
         return out
 
 class Out(tf.keras.layers.Layer):
-    def __init__(self, latent_spec, spec_out, net_attn_io=False, num_heads=1, memory_size=None):
+    def __init__(self, latent_spec, spec_out, net_attn_io=False, num_heads=1):
         super(Out, self).__init__(name='out')
-        outp, evo, latent_size = latent_spec['outp'], latent_spec['evo'], latent_spec['latent_size']
-        self.net_attn_io = net_attn_io
+        outp, evo, num_latents, latent_size = latent_spec['outp'], latent_spec['evo'], latent_spec['num_latents'], latent_spec['latent_size']
+        self.net_attn_io = (net_attn_io if num_latents > 1 else False)
 
         self.net_outs = len(spec_out); no = self.net_outs
         self.event_size, self.step_shape, params_size, self.dist, self.layer_attn_out, self.layer_dense_out, self.layer_out_logits, self.seq_size_out, self._dense_scale, self.arch_out = [None]*no, [None]*no, [None]*no, [None]*no, [None]*no, [None]*no, [None]*no, [None]*no, [None]*no, "Ö"
@@ -365,12 +365,12 @@ class Out(tf.keras.layers.Layer):
             seq_size_out = 1 if 'seq_size_out' not in spec_out[i] or spec_out[i]['seq_size_out'] is None else spec_out[i]['seq_size_out']
 
             params_size[i], self.dist[i] = util.distribution(spec_out[i])
-            if net_attn_io: self.layer_attn_out[i] = util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, memory_size=memory_size, norm=False, residual=False, cross_type=1, num_latents=seq_size_out*event_size, channels=latent_size, name='attn_out_{}_{}'.format(space_name, output_name))
+            if self.net_attn_io: self.layer_attn_out[i] = util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, memory_size=None, norm=False, residual=False, cross_type=1, num_latents=seq_size_out*event_size, channels=latent_size, name='attn_out_{}_{}'.format(space_name, output_name))
             else: self.layer_dense_out[i] = tf.keras.layers.Dense(seq_size_out*event_size*latent_size, name='dense_out_{}_{}'.format(space_name, output_name))
             self.layer_out_logits[i] = util.MLPBlock(hidden_size=outp, latent_size=params_size[i], evo=evo, residual=False, name='mlp_out_logits_{}_{}'.format(space_name, output_name))
 
             self.event_size[i], self.step_shape[i], self.seq_size_out[i] = tf.constant(event_size), list(step_shape[1:-1])+[latent_size], seq_size_out
-            self._dense_scale[i] = (self.event_size[i]*self.seq_size_out[i]) / latent_size
+            self._dense_scale[i] = (self.event_size[i]*self.seq_size_out[i]) / num_latents
             self.arch_out += "{}{}".format(dist_type, num_components)
 
     def call(self, inputs, batch_size=None, training=None):
