@@ -71,7 +71,7 @@ def run_graph(num_steps, obs_data, actions, net, seq_size, train=True):
 
         loss = tf.squeeze(loss) / num_out
         util.stats_update(net.stats['loss'], loss); _, ma_loss, _, snr_loss, std_loss = util.stats_get(net.stats['loss'])
-        metric_loss = metric_loss.write(step, loss); metric_ma_loss = metric_ma_loss.write(step, ma_loss); metric_snr = metric_snr.write(step, snr_loss); metric_std = metric_std.write(step, std_loss)
+        metric_loss = metric_loss.write(step, loss); metric_ma_loss = metric_ma_loss.write(step, ma_loss); metric_snr = metric_snr.write(step, snr_loss**np.e); metric_std = metric_std.write(step, std_loss)
 
         if train: net.optimizer['net'].learning_rate = learn_rate * snr_loss**np.e # **np.e # _lr-snre
         # if train: net.optimizer['net'].beta_1 = 0.0 + snr_loss * 0.9999 # _opt-bd
@@ -91,7 +91,7 @@ device_type = 'CPU'
 load_model, save_model = False, False
 max_episodes = 1; max_steps = 256; mem_img_size = 4; memory_size = 256
 seed0 = False
-net_blocks = 4; net_width = 2048; latent_size = 16; num_heads = 4; latent_dist = 'd'
+net_blocks = 4; net_width = 2048; evo=64; latent_size = 16; num_heads = 4; latent_dist = 'd'
 net_lstm = False; net_attn = {'net':True, 'io':True, 'out':True, 'ar':True}; aio_max_latents = 16
 opt_type = 'a'; schedule_type = ''; learn_rate = tf.constant(2e-4, compute_dtype)
 aug_data_pos = True # _aug-pos
@@ -185,7 +185,7 @@ with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' 
 
         latent_spec = {'dtype':compute_dtype, 'latent_size':latent_size, 'num_latents':1, 'max_latents':aio_max_latents}
         # latent_spec.update({'inp':latent_size*4, 'midp':latent_size*2, 'outp':latent_size*4, 'evo':int(latent_size/2)})
-        latent_spec.update({'inp':net_width, 'midp':int(net_width/2), 'outp':net_width, 'evo':64})
+        latent_spec.update({'inp':net_width, 'midp':int(net_width/2), 'outp':net_width, 'evo':evo})
         if latent_dist == 'd': latent_spec.update({'dist_type':'d', 'num_components':latent_size, 'event_shape':(latent_size,)}) # deterministic
         if latent_dist == 'c': latent_spec.update({'dist_type':'c', 'num_components':0, 'event_shape':(latent_size, latent_size)}) # categorical
         if latent_dist == 'mx': latent_spec.update({'dist_type':'mx', 'num_components':int(latent_size/16), 'event_shape':(latent_size,)}) # continuous

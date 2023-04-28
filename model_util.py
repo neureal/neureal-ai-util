@@ -101,7 +101,7 @@ def net_restore(net):
     for i in range(len(net.weights)): net.weights[i].assign(net.weights_store[i])
 
 def optimizer(net_name, opt_spec):
-    beta_1, beta_2, decay = tf.constant(0.99,tf.float64), tf.constant(0.99,tf.float64), 0 # tf.constant(0.0,tf.float64)
+    beta_1, beta_2, decay = tf.constant(0.99,tf.float64), tf.constant(0.99,tf.float64), 0 # tf.constant(0.0,tf.float64) # the effect of this is similar to batch size, ie 100 ~ minibatch # keeping b1/b2 the same is more stable and snr stays below 1.0
     typ, schedule_type, learn_rate, float_eps, name = opt_spec['type'], opt_spec['schedule_type'], opt_spec['learn_rate'], opt_spec['float_eps'], '{}/optimizer_{}/'.format(net_name, opt_spec['name'])
     maxval, minval = tf.constant(learn_rate), float_eps; mean, stddev = tf.constant(maxval/2), tf.constant((maxval-minval)/4)
     def schedule_r(): return tf.random.uniform((), dtype=tf.float64, maxval=maxval, minval=minval)
@@ -625,9 +625,8 @@ class MLPBlock(tf.keras.layers.Layer):
         super(MLPBlock, self).__init__(**kwargs)
         if evo is None: self._layer_dense = tf.keras.layers.Dense(hidden_size, activation=tf.keras.activations.gelu, use_bias=False, name='_dense')
         else: self._layer_dense = tf.keras.layers.Dense(hidden_size, activation=EvoNormS0(evo), use_bias=False, name='_dense')
-        self._layer_dense_latent = tf.keras.layers.Dense(latent_size, name='_dense_latent')
+        self._layer_dense_latent = tf.keras.layers.Dense(latent_size, use_bias=False, name='_dense_latent')
         self._residual = residual
-        self.latent_scale = latent_size / hidden_size
 
     def build(self, input_shape):
         if self._residual: self._residual_amt = tf.Variable(0.0, dtype=self.compute_dtype, trainable=True, name='residual') # ReZero
@@ -635,6 +634,5 @@ class MLPBlock(tf.keras.layers.Layer):
     def call(self, input):
         out = self._layer_dense(input)
         out = self._layer_dense_latent(out)
-        out = out * self.latent_scale
         if self._residual: out = input + out * self._residual_amt # Rezero
         return out
