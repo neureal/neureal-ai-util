@@ -280,6 +280,8 @@ def distribution(dist_spec):
     return params_size, dist
 
 class DeterministicSub(tfp.distributions.Deterministic):
+    def params_loss(self, params):
+        return tf.constant(0,tf.keras.backend.floatx())
     def _log_prob(self, x):
         # return tf.constant([-1], dtype=x.dtype)
         loc = tf.convert_to_tensor(self.loc)
@@ -305,6 +307,13 @@ class Deterministic(tfp.layers.DistributionLambda):
         params_size = np.prod(event_shape).item()
         return params_size
 
+class CategoricalIndependentSub(tfp.distributions.Independent):
+    def params_loss(self, params):
+        compute_dtype = tf.keras.backend.floatx()
+        max_softmax = tf.constant(15,compute_dtype) if compute_dtype == tf.float64 else tf.constant(5,compute_dtype)
+        loss = tf.reduce_mean(tf.math.abs(params))
+        if loss < max_softmax: loss = tf.constant(0,compute_dtype)
+        return loss
 class Categorical(tfp.layers.DistributionLambda):
     def __init__(self, num_components, event_shape=(), dtype_cat=tf.int32, **kwargs):
         params_shape = list(event_shape)+[num_components]
@@ -321,7 +330,7 @@ class Categorical(tfp.layers.DistributionLambda):
         # params = tfp.math.clip_by_value_preserve_gradient(params, -1, 1) # _cat-clip-tfp
         params = tf.reshape(params, output_shape)
         dist = tfp.distributions.Categorical(logits=params, dtype=dtype_cat)
-        dist = tfp.distributions.Independent(dist, reinterpreted_batch_ndims=reinterpreted_batch_ndims)
+        dist = CategoricalIndependentSub(dist, reinterpreted_batch_ndims=reinterpreted_batch_ndims)
         return dist
     @staticmethod
     def params_size(num_components, event_shape=(), name=None):
@@ -358,6 +367,23 @@ class CategoricalRP(tfp.layers.DistributionLambda): # reparametertized
 
 
 class MixtureSameFamily(tfp.distributions.MixtureSameFamily):
+    def params_loss(self, params):
+        compute_dtype = tf.keras.backend.floatx()
+        max_softmax = tf.constant(15,compute_dtype) if compute_dtype == tf.float64 else tf.constant(5,compute_dtype)
+        min_softplus = tf.constant(-3914,compute_dtype) if compute_dtype == tf.float64 else tf.constant(-2054,compute_dtype)
+        loss = tf.constant(0,compute_dtype)
+
+        mixture_params = params[..., :self._num_components]
+        components_params = params[..., self._num_components:]
+        loc_params, scale_params = tf.split(components_params, 2, axis=-1)
+
+        mixture_range = tf.reduce_mean(tf.math.abs(mixture_params))
+        if mixture_range >= max_softmax: loss = loss + mixture_range
+
+        scale_neg = tf.reduce_mean(scale_params)
+        if scale_neg < min_softplus: loss = loss - scale_neg
+
+        return loss
     def _entropy(self):
         # entropy = self.components_distribution.entropy() * self.mixture_distribution.probs_parameter()
         # entropy = tf.reduce_sum(entropy, axis=1) # entropy1
@@ -418,6 +444,7 @@ class MixtureLogistic(tfp.layers.DistributionLambda):
         dist_components = tfp.distributions.Independent(dist_component, reinterpreted_batch_ndims=reinterpreted_batch_ndims)
         dist = MixtureSameFamily(mixture_distribution=dist_mixture, components_distribution=dist_components)
         # dist = MixtureSameFamily(mixture_distribution=dist_mixture, components_distribution=dist_components, reparameterize=True) # better spread of loc and scale params, rep net works better, can have bugs
+        dist._num_components = num_components
 
         return dist
     @staticmethod

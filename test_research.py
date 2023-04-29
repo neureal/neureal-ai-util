@@ -60,10 +60,7 @@ def run_graph(num_steps, obs_data, actions, net, seq_size, train=True):
         with tf.GradientTape() as tape:
             logits = net(inputs); dist = net.dist[0](logits[0][:out_size])
             loss = util.loss_likelihood(dist, targets)
-            # if out_spec[0]['dist_type'] == 'c':
-            #     logit_scale = tf.reduce_mean(tf.math.abs(logits[0][:out_size])) # _loss-logits
-            #     if logit_scale < 15: logit_scale = tf.constant(0,compute_dtype)
-            #     loss = loss + logit_scale
+            loss = loss + dist.params_loss(logits[0][:out_size])
         if train:
             gradients = tape.gradient(loss, net.trainable_variables)
             net.optimizer['net'].apply_gradients(zip(gradients, net.trainable_variables))
