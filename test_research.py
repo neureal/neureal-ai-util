@@ -176,7 +176,8 @@ with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' 
 
 
 
-        initializer = tf.keras.initializers.GlorotUniform(seed)
+        # initializer = tf.keras.initializers.GlorotUniform(seed)
+        initializer = tf.keras.initializers.VarianceScaling(scale=0.9999, mode='fan_in', distribution='uniform', seed=seed)
         opt_spec = [{'name':'net', 'type':opt_type, 'schedule_type':schedule_type, 'learn_rate':learn_rate, 'float_eps':float_eps, 'num_steps':num_steps_train, 'lr_min':2e-7}]; stats_spec = [{'name':'loss', 'b1':0.99, 'b2':0.99, 'dtype':compute_dtype},{'name':'diff', 'b1':0.99, 'b2':0.99, 'dtype':compute_dtype}]
         inputs = {'obs':[tf.constant(train_obs[0:1])]}; in_spec = [{'space_name':'obs', 'name':'', 'event_shape':obs_event_shape, 'event_size':obs_event_size, 'channels':obs_channels, 'step_shape':obs_step_shape, 'num_latents':num_latents}]
 

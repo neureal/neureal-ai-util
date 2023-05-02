@@ -370,7 +370,9 @@ class MixtureSameFamily(tfp.distributions.MixtureSameFamily):
     def params_loss(self, params):
         compute_dtype = tf.keras.backend.floatx()
         max_softmax = tf.constant(15,compute_dtype) if compute_dtype == tf.float64 else tf.constant(5,compute_dtype)
-        min_softplus = tf.constant(-3914,compute_dtype) if compute_dtype == tf.float64 else tf.constant(-2054,compute_dtype)
+        # min_softplus = tf.constant(-6609,compute_dtype) if compute_dtype == tf.float64 else tf.constant(-3155,compute_dtype) # sharpness = 6e-3 (115)
+        min_softplus = tf.constant(-3914,compute_dtype) if compute_dtype == tf.float64 else tf.constant(-2054,compute_dtype) # sharpness = 1e-2 (69)
+        # min_softplus = tf.constant(-368,compute_dtype) if compute_dtype == tf.float64 else tf.constant(-161,compute_dtype) # sharpness = 1e-1 (7)
         loss = tf.constant(0,compute_dtype)
 
         mixture_params = params[..., :self._num_components]
@@ -431,7 +433,7 @@ class MixtureLogistic(tfp.layers.DistributionLambda):
         # scale_params = tf.math.abs(scale_params)
         # # scale_params = tfp.math.clip_by_value_preserve_gradient(scale_params, eps, maxroot)
         # scale_params = tf.clip_by_value(scale_params, eps, maxroot)
-        sharpness = tf.constant(1e-2, scale_params.dtype)
+        sharpness = tf.constant(1e-2, scale_params.dtype) # zero points 6e-3 = 115, 1e-2 = 69, 4e-2 = 17, 1e-1 = 7
         scale_params = tf.math.softplus(scale_params*sharpness)/sharpness
         # scale_params = tf.math.softplus(scale_params)
         scale_params = scale_params + eps
@@ -516,8 +518,15 @@ class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
     def _compute_attention(self, query, key, value, attention_mask=None):
         query = tf.math.multiply(query, self._query_scale)
         attn_scores = tf.einsum(self._dot_product_equation, key, query)
+        # attn_scores = tf.math.multiply(attn_scores, self._query_scale)
+        attn_scores = tf.math.sqrt(tf.math.abs(attn_scores)) * tf.math.sign(attn_scores)
         attn_scores = self._masked_softmax(attn_scores, attention_mask) # TODO can I replace softmax here with somthing more log likelihood related? (ie continuous attn)
+
+        # attn_output_scale = 1.0 / tf.math.sqrt(tf.cast(tf.shape(key)[1],self.compute_dtype))
+        # value = tf.math.multiply(value, attn_output_scale)
         attn_output = tf.einsum(self._combine_equation, attn_scores, value)
+        # attn_output = tf.math.multiply(attn_output, attn_output_scale)
+        attn_output = tf.math.sqrt(tf.math.abs(attn_output)) * tf.math.sign(attn_output)
         return attn_output, attn_scores
 
     def call(self, value, attention_mask=None, auto_mask=None, store_memory=True, use_img=False, store_real=False, num_latents=None, batch_size=None):
