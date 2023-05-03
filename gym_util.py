@@ -26,7 +26,8 @@ def get_spec(space, space_name='obs', name='', compute_dtype='float64', net_attn
     elif isinstance(space, gym.spaces.Box):
         dtype, dtype_out = tf.dtypes.as_dtype(space.dtype), tf.dtypes.as_dtype(compute_dtype)
         if dtype == tf.uint8 or dtype == tf.int32 or dtype == tf.int64 or dtype == tf.bool: dist_type, num_components, event_shape, dtype_out = 'c', int(space.high.max().item())+1, (space.shape[-1],), tf.dtypes.as_dtype('int32')
-        else: dist_type, num_components, event_shape = 'mx', int(np.prod(space.shape).item()*mixture_multi), space.shape
+        # else: dist_type, num_components, event_shape = 'mx', int(np.prod(space.shape).item()*mixture_multi), (space.shape[-1],)
+        else: dist_type, num_components, event_shape = 'd', 1, (space.shape[-1],)
         event_size, channels, step_shape = int(np.prod(space.shape[:-1]).item()), space.shape[-1], tf.TensorShape([1]+list(space.shape))
         # num_latents = aio_max_latents if event_size > aio_max_latents else event_size
         num_latents = int(2**np.ceil(np.log2(np.sqrt(event_size)*2)))

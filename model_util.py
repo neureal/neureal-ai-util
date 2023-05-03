@@ -458,12 +458,12 @@ class MixtureLogistic(tfp.layers.DistributionLambda):
 
 
 class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
-    def __init__(self, latent_size, num_heads=1, memory_size=None, sort_memory=False, norm=False, hidden_size=None, evo=None, residual=True, use_bias=False, cross_type=None, num_latents=None, channels=None, init_zero=None, save_attn_scores=False, **kwargs): # cross_type: 1 = input, 2 = output
+    def __init__(self, latent_size, num_heads=1, memory_size=None, sort_memory=False, norm=False, hidden_size=None, evo=None, residual=True, use_bias=False, cross_type=None, num_latents=None, channels=None, latent_multi=0, init_zero=None, save_attn_scores=False, **kwargs): # cross_type: 1 = input, 2 = output
         key_dim = int(channels/num_heads) if cross_type == 2 else int(latent_size/num_heads)
         # key_dim = int(latent_size/num_heads)
         super(MultiHeadAttention, self).__init__(tf.identity(num_heads), tf.identity(key_dim), use_bias=use_bias, **kwargs)
+        cross_type = 3 if latent_multi > 0 else cross_type
         self._mem_size, self._sort_memory, self._norm, self._residual, self._cross_type, self._save_attn_scores = memory_size, sort_memory, norm, residual, cross_type, save_attn_scores
-        self._mem_channels = latent_size if cross_type != 1 else channels
         float_eps = tf.experimental.numpy.finfo(self.compute_dtype).eps
 
         if norm:
@@ -480,8 +480,8 @@ class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
                 # init_zero = tf.random.normal((1, num_latents, latent_size), mean=0.0, stddev=0.02, dtype=self.compute_dtype)
                 # init_zero = tf.clip_by_value(init_zero, -2.0, 2.0)
                 # init_zero = np.random.uniform(np.asarray(-1.0, dtype=self.compute_dtype), 1.0, num_latents)
-                if cross_type == 1: # input, batch = different latents
-                    init_zero = np.linspace(1.0, -1.0, num_latents, dtype=self.compute_dtype) # -np.e, np.e
+                if cross_type == 1 or cross_type == 3: # input, batch = different latents
+                    init_zero = np.linspace(1.0, -1.0, (num_latents*latent_multi if cross_type == 3 else num_latents), dtype=self.compute_dtype) # -np.e, np.e
                     init_zero = np.expand_dims(init_zero, axis=-1)
                     init_zero = np.repeat(init_zero, latent_size, axis=-1)
                 if cross_type == 2: # output, batch = actual batch
@@ -532,11 +532,12 @@ class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
     def call(self, value, attention_mask=None, auto_mask=None, store_memory=True, use_img=False, store_real=False, num_latents=None, batch_size=None):
         if batch_size is None: batch_size = 1
         latent_size = tf.shape(value)[-1]
+        # value[0](batch) = time dim, value[1:-2] = space/feat dim, value[-1] = channel dim
+        value = tf.reshape(value, (batch_size, -1, latent_size))
         if self._cross_type:
-            # value[0](batch) = time dim, value[1:-2] = space/feat dim, value[-1] = channel dim
-            value = tf.reshape(value, (batch_size, -1, latent_size))
             query = self._init_latent if num_latents is None else self._init_latent[:,:num_latents]
             if batch_size != 1: query = tf.repeat(query, repeats=batch_size, axis=0)
+            if self._cross_type == 3: query = tf.concat([query, value], axis=1)
         else: query = value
         if not self._built_from_signature: self._build_from_signature(query=query, value=value, key=None)
 
@@ -641,7 +642,7 @@ class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
 
         attn_output = self._output_dense(attn_output)
         if self._residual: attn_output = query + attn_output * self._residual_amt # ReZero
-        if self._cross_type and batch_size == 1: attn_output = tf.squeeze(attn_output, axis=0)
+        # if self._cross_type and batch_size == 1: attn_output = tf.squeeze(attn_output, axis=0)
         return attn_output
 
     def reset_states(self, use_img=False):

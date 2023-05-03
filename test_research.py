@@ -89,7 +89,7 @@ load_model, save_model = False, False
 max_episodes = 1; max_steps = 256; mem_img_size = 4; memory_size = 256
 seed0 = False
 net_blocks = 4; net_width = 2048; evo=64; latent_size = 16; num_heads = 4; latent_dist = 'd'
-net_lstm = False; net_attn = {'net':True, 'io':True, 'out':True, 'ar':True}; aio_max_latents = 16
+net_lstm = False; net_attn = {'net':True, 'io':True, 'out':True, 'ar':True}; aio_max_latents = 16; latent_multi = 63
 opt_type = 'a'; schedule_type = ''; learn_rate = tf.constant(2e-4, compute_dtype)
 aug_data_pos = True # _aug-pos
 machine, device, extra_info = 'dev', 0, '' # _aug-pos _lr-snre
@@ -153,8 +153,8 @@ with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' 
         run = 'runT3'; seq_size = mem_img_size; train_act, test_act = train_obs, test_obs ## predict next text trajectory
 
         ## set image run type
-        # run = 'run1'; memory_size = None ## predict image category
-        # run = 'run2'; memory_size = None; num_cats = 256; train_act, test_act = train_obs, test_obs ## reconstruct image
+        # run = 'run1'; memory_size = None; latent_multi=0 ## predict image category
+        # run = 'run2'; memory_size = None; num_cats = 256; train_act, test_act = train_obs, test_obs; latent_multi=0 ## reconstruct image
         # run = 'run3'; memory_size = None; num_cats = 256; train_obs, train_act = train_act, train_obs; test_obs, test_act = test_act, test_obs ## generate image from category
 
 
@@ -164,8 +164,7 @@ with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' 
         obs_event_shape, obs_event_size, obs_channels, obs_step_shape = obs_space.shape, int(np.prod(obs_space.shape[:-1]).item()), obs_space.shape[-1], tf.TensorShape(train_obs[0:1].shape)
         act_event_shape, act_event_size, act_channels, act_step_shape = action_space.shape, int(np.prod(action_space.shape[:-1]).item()), action_space.shape[-1], tf.TensorShape(train_act[0:1].shape)
         num_latents = aio_max_latents if obs_event_size > aio_max_latents else obs_event_size
-        if num_latents == 1 and memory_size is not None: net_attn.update({'ar':False}) # attn makes no sense w/1 latent
-        if num_latents == 1 and memory_size is None: net_lstm = False; net_attn.update({'net':False, 'out':False, 'ar':False})
+        if num_latents == 1 and latent_multi == 0 and memory_size is None: net_lstm = False; net_attn.update({'net':False, 'out':False, 'ar':False}) # attn makes no sense w/1 latent
         ylimD = min(int(num_cats/2),100)
         out_spec_dtype = tf.uint8 if num_cats <= 256 else tf.int32
 
@@ -189,12 +188,12 @@ with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' 
         if latent_dist == 'mx': latent_spec.update({'dist_type':'mx', 'num_components':int(latent_size/16), 'event_shape':(latent_size,)}) # continuous
 
 
-        info = "data-{}{}_{}-a{}_{}{}{}_O{}{}_net{}-{}{}{}{}{}{}_lat{}x{}h{}-{}_lr{:.0e}_Ö{}{}{}{}_{}".format(name.replace('_','').replace('/','-').replace(':','-'),name_size,machine,device,run,out_spec[0]['dist_type'],('_seed0' if seed0 else ''),opt_type,('' if schedule_type=='' else '-'+schedule_type),net_blocks,net_width,
+        info = "data-{}{}_{}-a{}_{}{}{}_O{}{}_net{}-{}{}{}{}{}{}_lat{}{}x{}h{}-{}_lr{:.0e}_Ö{}{}{}{}_{}".format(name.replace('_','').replace('/','-').replace(':','-'),name_size,machine,device,run,out_spec[0]['dist_type'],('_seed0' if seed0 else ''),opt_type,('' if schedule_type=='' else '-'+schedule_type),net_blocks,net_width,
             ('-lstm' if net_lstm else ''),('-attn' if net_attn['net'] else ''),('-ar' if net_attn['net'] and net_attn['ar'] and memory_size is not None else ''),('-io' if net_attn['io'] else ''),('-out' if net_attn['out'] else ''),
-            num_latents,latent_size,num_heads,latent_dist,learn_rate,num_cats,('_mem'+str(memory_size) if net_attn['net'] and memory_size is not None else ''),('-img'+str(mem_img_size) if seq_size > 1 else ''),extra_info,time.strftime("%y-%m-%d-%H-%M-%S"))
+            ('' if latent_multi==0 else str(latent_multi+1)+'x'),num_latents,latent_size,num_heads,latent_dist,learn_rate,num_cats,('_mem'+str(memory_size) if net_attn['net'] and memory_size is not None else ''),('-img'+str(mem_img_size) if seq_size > 1 else ''),extra_info,time.strftime("%y-%m-%d-%H-%M-%S"))
 
         ## test net
-        testnet = nets.ArchFull('TEST', inputs, opt_spec, stats_spec, in_spec, out_spec, latent_spec, net_blocks=net_blocks, net_lstm=net_lstm, net_attn=net_attn, num_heads=num_heads, memory_size=memory_size, aug_data_pos=aug_data_pos); outputs = testnet(inputs)
+        testnet = nets.ArchFull('TEST', inputs, opt_spec, stats_spec, in_spec, out_spec, latent_spec, net_blocks=net_blocks, net_lstm=net_lstm, net_attn=net_attn, num_heads=num_heads, memory_size=memory_size, latent_multi=latent_multi, aug_data_pos=aug_data_pos); outputs = testnet(inputs)
         testnet.optimizer_weights = util.optimizer_build(testnet.optimizer['net'], testnet.trainable_variables)
         util.net_build(testnet, initializer)
 

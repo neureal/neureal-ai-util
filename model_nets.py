@@ -5,10 +5,10 @@ import model_util as util
 
 
 class ArchFull(tf.keras.Model):
-    def __init__(self, name, inputs, opt_spec, stats_spec, spec_in, spec_out, latent_spec, obs_latent=False, net_blocks=1, net_lstm=False, net_attn=None, num_heads=1, memory_size=None, aug_data_pos=False):
+    def __init__(self, name, inputs, opt_spec, stats_spec, spec_in, spec_out, latent_spec, obs_latent=False, net_blocks=1, net_lstm=False, net_attn=None, num_heads=1, memory_size=None, latent_multi=0, aug_data_pos=False):
         super(ArchFull, self).__init__(name=name)
         self.inp = In(latent_spec, spec_in, obs_latent=obs_latent, net_attn_io=net_attn['io'], num_heads=num_heads, aug_data_pos=aug_data_pos)
-        self.net = Net(latent_spec, obs_latent=obs_latent, net_blocks=net_blocks, net_lstm=net_lstm, net_attn=net_attn['net'], net_attn_io=net_attn['io'], net_attn_ar=net_attn['ar'], num_heads=num_heads, memory_size=memory_size)
+        self.net = Net(latent_spec, obs_latent=False, net_blocks=net_blocks, net_lstm=net_lstm, net_attn=net_attn['net'], net_attn_io=net_attn['io'], net_attn_ar=net_attn['ar'], num_heads=num_heads, memory_size=memory_size, latent_multi=latent_multi)
         self.out = Out(latent_spec, spec_out, net_attn_io=net_attn['out'], num_heads=num_heads)
         self.dist = self.out.dist
         self.inp_subs = [sm for sm in self.inp.submodules if sm.name.startswith(('dense_','mlp_','attn_','lstm_'))]
@@ -27,8 +27,8 @@ class ArchFull(tf.keras.Model):
         arch_in = "{}D{}".format(('Aio+' if net_attn['io'] else ''), latent_spec['inp'])
         arch_net = "{:02d}{}{}D{}".format(net_blocks, ('AT+' if net_attn['net'] else ''), ('LS+' if net_lstm else ''), latent_spec['midp'])
         arch_out = "{}D{}".format(('Aio+' if net_attn['out'] else ''), latent_spec['outp'])
-        self.arch_desc_file = "{}[in{}_net{}_out{}_{}]".format(name, arch_in, arch_net, arch_out, self.inp.arch_lat)
-        self.arch_desc = "{}[in{}_net{}_out{}_{}]".format(name, arch_in+'-'+self.inp.arch_in, arch_net, arch_out+'-'+self.out.arch_out, self.inp.arch_lat)
+        self.arch_desc_file = "{}[in{}_net{}_out{}_{}]".format(name, arch_in, arch_net, arch_out, self.net.arch_lat)
+        self.arch_desc = "{}[in{}_net{}_out{}_{}]".format(name, arch_in+'-'+self.inp.arch_in, arch_net, arch_out+'-'+self.out.arch_out, self.net.arch_lat)
 
     def reset_states(self, use_img=False):
         if self.inp.net_attn_io2: self.inp.layer_attn_io2._mem_score.assign(self.inp.layer_attn_io2._mem_score_zero)
@@ -46,10 +46,10 @@ class ArchFull(tf.keras.Model):
         return out
 
 class ArchTrans(tf.keras.Model):
-    def __init__(self, name, inputs, opt_spec, stats_spec, spec_in, latent_spec, obs_latent=False, net_blocks=1, net_lstm=False, net_attn=None, num_heads=1, memory_size=None, aug_data_pos=False):
+    def __init__(self, name, inputs, opt_spec, stats_spec, spec_in, latent_spec, obs_latent=False, net_blocks=1, net_lstm=False, net_attn=None, num_heads=1, memory_size=None, latent_multi=0, aug_data_pos=False):
         super(ArchTrans, self).__init__(name=name)
         self.inp = In(latent_spec, spec_in, obs_latent=obs_latent, net_attn_io=net_attn['io'], num_heads=num_heads, aug_data_pos=aug_data_pos)
-        self.net = Net(latent_spec, obs_latent=obs_latent, net_blocks=net_blocks, net_lstm=net_lstm, net_attn=net_attn['net'], net_attn_io=net_attn['io'], net_attn_ar=net_attn['ar'], num_heads=num_heads, memory_size=memory_size)
+        self.net = Net(latent_spec, obs_latent=obs_latent, net_blocks=net_blocks, net_lstm=net_lstm, net_attn=net_attn['net'], net_attn_io=net_attn['io'], net_attn_ar=net_attn['ar'], num_heads=num_heads, memory_size=memory_size, latent_multi=latent_multi)
         self.dist = self.net.dist
         self.inp_subs = [sm for sm in self.inp.submodules if sm.name.startswith(('dense_','mlp_','attn_','lstm_'))]
         self.net_subs = [sm for sm in self.net.submodules if sm.name.startswith(('dense_','mlp_','attn_','lstm_'))]
@@ -109,14 +109,14 @@ class ArchRep(tf.keras.Model):
         return out
 
 class ArchGen(tf.keras.Model):
-    def __init__(self, name, inputs, opt_spec, stats_spec, spec_out, latent_spec, net_blocks=1, net_lstm=False, net_attn=None, num_heads=1, memory_size=None):
+    def __init__(self, name, inputs, opt_spec, stats_spec, spec_out, latent_spec, net_blocks=1, net_lstm=False, net_attn=None, num_heads=1, memory_size=None, latent_multi=0):
         super(ArchGen, self).__init__(name=name)
         # num_latents, latent_size = latent_spec['num_latents'], latent_spec['latent_size']
         # # self.layer_attn_in = util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, norm=False, residual=False, cross_type=1, num_latents=num_latents, channels=latent_size, memory_size=memory_size, name='attn_in')
         # self.layer_attn_in = util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, memory_size=memory_size, residual=True, name='attn_in')
         # self.layer_mlp_in = util.MLPBlock(hidden_size=256, latent_size=latent_size, evo=None, residual=True, name='mlp_in')
 
-        self.net = Net(latent_spec, obs_latent=False, net_blocks=net_blocks, net_lstm=net_lstm, net_attn=net_attn['net'], net_attn_io=net_attn['io'], net_attn_ar=net_attn['ar'], num_heads=num_heads, memory_size=memory_size)
+        self.net = Net(latent_spec, obs_latent=False, net_blocks=net_blocks, net_lstm=net_lstm, net_attn=net_attn['net'], net_attn_io=net_attn['io'], net_attn_ar=net_attn['ar'], num_heads=num_heads, memory_size=memory_size, latent_multi=latent_multi)
         self.out = Out(latent_spec, spec_out, net_attn_io=net_attn['out'], num_heads=num_heads)
         self.dist = self.out.dist
         self.net_subs = [sm for sm in self.net.submodules if sm.name.startswith(('dense_','mlp_','attn_','lstm_'))]
@@ -156,9 +156,9 @@ class ArchGen(tf.keras.Model):
         return out
 
 class ArchNet(tf.keras.Model):
-    def __init__(self, name, inputs, opt_spec, stats_spec, latent_spec, net_blocks=1, net_lstm=False, net_attn=None, num_heads=1, memory_size=None):
+    def __init__(self, name, inputs, opt_spec, stats_spec, latent_spec, net_blocks=1, net_lstm=False, net_attn=None, num_heads=1, memory_size=None, latent_multi=0):
         super(ArchNet, self).__init__(name=name)
-        self.net = Net(latent_spec, obs_latent=False, net_blocks=net_blocks, net_lstm=net_lstm, net_attn=net_attn['net'], net_attn_io=net_attn['io'], net_attn_ar=net_attn['ar'], num_heads=num_heads, memory_size=memory_size)
+        self.net = Net(latent_spec, obs_latent=False, net_blocks=net_blocks, net_lstm=net_lstm, net_attn=net_attn['net'], net_attn_io=net_attn['io'], net_attn_ar=net_attn['ar'], num_heads=num_heads, memory_size=memory_size, latent_multi=latent_multi)
         self.dist = self.net.dist
         self.net_subs = [sm for sm in self.net.submodules if sm.name.startswith(('dense_','mlp_','attn_','lstm_'))]
 
@@ -184,47 +184,6 @@ class ArchNet(tf.keras.Model):
         if isinfnan > 0: tf.print(self.name, 'net out:', out)
         return out
 
-class ArchAR(tf.keras.Model):
-    def __init__(self, name, inputs, opt_spec, stats_spec, latent_spec, net_blocks=1, net_lstm=False, net_attn=None, num_heads=1, memory_size=None, mem_img_size=0):
-        super(ArchAR, self).__init__(name=name)
-        num_latents, latent_size = latent_spec['num_latents'], latent_spec['latent_size']
-        self.net_attn_io, self.out_shape = net_attn['out'], (-1, num_latents, latent_size)
-
-        self.net = Net(latent_spec, obs_latent=False, net_blocks=net_blocks, net_lstm=net_lstm, net_attn=net_attn['net'], net_attn_io=net_attn['io'], net_attn_ar=net_attn['ar'], num_heads=num_heads, memory_size=memory_size)
-        self.dist = self.net.dist
-        self.net_subs = [sm for sm in self.net.submodules if sm.name.startswith(('dense_','mlp_','attn_','lstm_'))]
-        if net_attn['out']: self.layer_attn_out = util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, norm=False, residual=False, cross_type=1, num_latents=mem_img_size*num_latents, channels=latent_size, name='ar_attn_out')
-        else: self.layer_dense_out = tf.keras.layers.Dense(mem_img_size*num_latents*latent_size, use_bias=False, name='ar_dense_out')
-        # self.layer_out_logits = util.MLPBlock(hidden_size=512, latent_size=latent_size, evo=64, residual=False, name='ar_mlp_out_logits') # _trans-logits
-
-        self.optimizer = OrderedDict()
-        for spec in opt_spec: self.optimizer[spec['name']] = util.optimizer(name, spec)
-        stats = OrderedDict()
-        for spec in stats_spec: stats[spec['name']] = {'b1':tf.constant(spec['b1'],spec['dtype']), 'b1_n':tf.constant(1-spec['b1'],spec['dtype']), 'b2':tf.constant(spec['b2'],spec['dtype']), 'b2_n':tf.constant(1-spec['b2'],spec['dtype']), 'dtype':spec['dtype'],
-            'ma':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/ma'.format(name,spec['name'])), 'ema':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/ema'.format(name,spec['name'])),
-            'iter':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/iter'.format(name,spec['name'])), 'sum':tf.Variable(0, dtype=spec['dtype'], trainable=False, name='{}/stats_{}/sum'.format(name,spec['name'])),}
-        self.stats = stats
-
-        self(inputs); self.call = tf.function(self.call, experimental_autograph_options=tf.autograph.experimental.Feature.LISTS)
-        arch_net = "{:02d}{}{}D{}".format(net_blocks, ('AT+' if net_attn['net'] else ''), ('LS+' if net_lstm else ''), latent_spec['midp'])
-        self.arch_desc_file = "{}[net{}_{}]".format(name, arch_net, self.net.arch_lat); self.arch_desc = self.arch_desc_file
-
-    def reset_states(self, use_img=False):
-        for layer in self.net.layer_attn: layer.reset_states(use_img=use_img)
-        for layer in self.net.layer_lstm: layer.reset_states()
-    def call(self, inputs, store_memory=True, use_img=False, store_real=False, batch_size=None, training=None):
-        out = self.net(inputs, store_memory=store_memory, use_img=use_img, store_real=store_real, batch_size=batch_size, training=training)
-        if self.net_attn_io: out = self.layer_attn_out(out, batch_size=batch_size)
-        else:
-            if batch_size is None: batch_size = 1
-            out = tf.reshape(out, (batch_size, -1))
-            out = self.layer_dense_out(out)
-        out = tf.reshape(out, self.out_shape)
-        # out = self.layer_out_logits(out) # _trans-logits
-
-        isinfnan = tf.math.count_nonzero(tf.math.logical_or(tf.math.is_nan(out), tf.math.is_inf(out)))
-        if isinfnan > 0: tf.print(self.name, 'net out:', out)
-        return out
 
 
 
@@ -286,7 +245,8 @@ class In(tf.keras.layers.Layer):
     #     if self.net_attn_io2: out_accu = self.layer_attn_io2(out_accu)
     #     return out_accu
 
-    def call(self, inputs, training=None):
+    def call(self, inputs, batch_size=None, training=None):
+        if batch_size is None: batch_size = 1
         out_accu, out_accu_i = [None]*self.net_ins, 0
         for input_name in self.input_names.keys():
             for i in range(self.input_names[input_name]):
@@ -296,29 +256,30 @@ class In(tf.keras.layers.Layer):
                     pos_idx = tf.broadcast_to(self.pos_idx_in[input_name][i], shape)
                     out = tf.concat([out, pos_idx], axis=-1)
                 out = self.layer_mlp_in[input_name][i](out)
-                if self.layer_attn_in[input_name][i] is not None: out_accu[out_accu_i] = self.layer_attn_in[input_name][i](out)
-                else: out_accu[out_accu_i] = tf.reshape(out, (-1, self.latent_size))
+                if self.layer_attn_in[input_name][i] is not None: out_accu[out_accu_i] = self.layer_attn_in[input_name][i](out, batch_size=batch_size)
+                else: out_accu[out_accu_i] = tf.reshape(out, (batch_size, -1, self.latent_size))
                 # if not self.net_attn_io: out = tf.reshape(out, (1, -1)) # TODO
                 # if self.layer_attn_in[input_name][i] is not None: out = self.layer_attn_in[input_name][i](out)
                 # out_accu[out_accu_i] = tf.reshape(out, (-1, self.latent_size))
                 out_accu_i += 1
         if self.obs_latent: out_accu[-1] = tf.cast(inputs['obs'], self.compute_dtype)
         # out = tf.math.add_n(out_accu) # out = tf.math.accumulate_n(out_accu)
-        out = tf.concat(out_accu, axis=0)
+        out = tf.concat(out_accu, axis=1)
         if self.net_attn_io2: out = self.layer_attn_io2(out)
         return out
 
 class Net(tf.keras.layers.Layer):
-    def __init__(self, latent_spec, obs_latent=False, net_blocks=1, net_lstm=False, net_attn=False, net_attn_io=False, net_attn_ar=False, num_heads=1, memory_size=None):
+    def __init__(self, latent_spec, obs_latent=False, net_blocks=1, net_lstm=False, net_attn=False, net_attn_io=False, net_attn_ar=False, num_heads=1, memory_size=None, latent_multi=0):
         super(Net, self).__init__(name='net')
         outp, midp, evo, latent_size = latent_spec['outp'], latent_spec['midp'], latent_spec['evo'], latent_spec['latent_size']
+        self.num_latents, self.dist_out = latent_spec['num_latents'], latent_spec['dist_type'] != 'd'
         self.obs_latent, self.net_blocks, self.net_attn, self.net_lstm, self.net_attn_io = obs_latent, net_blocks, net_attn, net_lstm, net_attn_io
 
         self.layer_attn, self.layer_lstm, self.layer_dense, self._residual_amt, self.layer_mlp = [], [], [], [], []
         for i in range(net_blocks):
             if net_attn:
-                mem_active = None if net_attn_ar and i > 0 else memory_size
-                self.layer_attn += [util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, memory_size=mem_active, residual=True, name='attn_{:02d}'.format(i))]
+                mem_active = None if net_attn_ar and i > 0 else memory_size; multi_active = 0 if i > 0 else latent_multi
+                self.layer_attn += [util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, memory_size=mem_active, residual=True, num_latents=self.num_latents, latent_multi=multi_active, name='attn_{:02d}'.format(i))]
             if net_lstm:
                 # self.layer_lstm += [tf.keras.layers.LSTM(latent_size, activation=util.EvoNormS0(evo), use_bias=False, return_sequences=True, stateful=True, name='lstm_{:02d}'.format(i))]
                 self.layer_lstm += [tf.keras.layers.LSTM(latent_size, return_sequences=True, stateful=True, name='lstm_{:02d}'.format(i))] # CUDA
@@ -326,26 +287,25 @@ class Net(tf.keras.layers.Layer):
                 self._residual_amt += [tf.Variable(0.0, dtype=self.compute_dtype, trainable=True, name='residual_{:02d}'.format(i))] # ReZero
             self.layer_mlp += [util.MLPBlock(hidden_size=midp, latent_size=latent_size, evo=evo, residual=True, name='mlp_{:02d}'.format(i))]
 
-        self.num_latents, self.dist_out = latent_spec['num_latents'], latent_spec['dist_type'] != 'd'
         params_size, self.dist = util.distribution(latent_spec)
         if obs_latent:
             if net_attn_io: self.layer_attn_out = util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, norm=False, residual=False, cross_type=1, num_latents=self.num_latents, channels=latent_size, name='attn_out')
             else: self.layer_dense_out = tf.keras.layers.Dense(self.num_latents*latent_size, use_bias=False, name='dense_out')
         if self.dist_out: self.layer_out_logits = util.MLPBlock(hidden_size=outp, latent_size=params_size, evo=evo, residual=False, name='mlp_out_logits')
 
-        self.arch_lat = "L{}{}x{}".format(latent_spec['dist_type'], self.num_latents, latent_size)
+        self.arch_lat = "L{}{}{}x{}".format(latent_spec['dist_type'], ('' if latent_multi==0 else str(latent_multi+1)+'x'), self.num_latents, latent_size)
 
     def call(self, inputs, store_memory=True, use_img=False, store_real=False, batch_size=None, training=None):
         out = tf.cast(inputs, self.compute_dtype)
-        if batch_size is None: out = tf.expand_dims(out, axis=0)
+        # if batch_size is None: out = tf.expand_dims(out, axis=0)
         for i in range(self.net_blocks):
-            if self.net_attn: out = self.layer_attn[i](out, auto_mask=training, store_memory=store_memory, use_img=use_img, store_real=store_real)
+            if self.net_attn: out = self.layer_attn[i](out, auto_mask=training, store_memory=store_memory, use_img=use_img, store_real=store_real, batch_size=batch_size)
             if self.net_lstm:
                 outL = self.layer_lstm[i](out, training=training)
                 outL = self.layer_dense[i](outL)
                 out = out + outL * self._residual_amt[i] # Rezero
             out = self.layer_mlp[i](out)
-        if batch_size is None: out = tf.squeeze(out, axis=0)
+        # if batch_size is None: out = tf.squeeze(out, axis=0)
         if self.obs_latent:
             if self.net_attn_io: out = self.layer_attn_out(out)
             else: out = tf.reshape(self.layer_dense_out(tf.reshape(out, (1, -1))), (self.num_latents, -1))
@@ -356,7 +316,8 @@ class Out(tf.keras.layers.Layer):
     def __init__(self, latent_spec, spec_out, net_attn_io=False, num_heads=1):
         super(Out, self).__init__(name='out')
         outp, evo, num_latents, latent_size = latent_spec['outp'], latent_spec['evo'], latent_spec['num_latents'], latent_spec['latent_size']
-        self.net_attn_io = (net_attn_io if num_latents > 1 else False)
+        # self.net_attn_io = (net_attn_io if num_latents > 1 else False)
+        self.net_attn_io = net_attn_io
 
         self.net_outs = len(spec_out); no = self.net_outs
         self.event_size, self.step_shape, params_size, self.dist, self.layer_attn_out, self.layer_dense_out, self.layer_out_logits, self.seq_size_out, self._dense_scale, self.arch_out = [None]*no, [None]*no, [None]*no, [None]*no, [None]*no, [None]*no, [None]*no, [None]*no, [None]*no, "Ö"
