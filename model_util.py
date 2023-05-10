@@ -121,6 +121,7 @@ def optimizer(net_name, opt_spec):
     if typ == 'ab': optimizer = tfa.optimizers.AdaBelief(learning_rate=learn_rate, epsilon=float_eps, rectify=True, name=name+'AdaBelief')
     if typ == 'co': optimizer = tfa.optimizers.COCOB(alpha=100.0, use_locking=True, name=name+'COCOB')
     if typ == 'ws': optimizer = tfa.optimizers.SWA(tf.keras.optimizers.SGD(learning_rate=learn_rate), start_averaging=0, average_period=10, name=name+'SWA') # has error with floatx=float64
+    # if typ == 'ma': optimizer = tfa.optimizers.MovingAverage(tf.keras.optimizers.SGD(learning_rate=learn_rate), name=name+'MA')
     if typ == 'sw': optimizer = tfa.optimizers.SGDW(learning_rate=learn_rate, weight_decay=opt_spec['weight_decay'], name=name+'SGDW')
     # if typ == 'ax':
     #     optimizer = tf.keras.optimizers.experimental.Adam(beta_1=beta_1, beta_2=beta_2, amsgrad=False, learning_rate=learn_rate, epsilon=float_eps, name=name+'AdamEx')
@@ -326,8 +327,9 @@ class Categorical(tfp.layers.DistributionLambda):
     def new(params, params_shape, reinterpreted_batch_ndims, dtype_cat=tf.int32):
         # print("tracing -> Categorical new")
         output_shape = tf.concat([tf.shape(params)[:-1], params_shape], axis=0)
-        # params = tf.clip_by_value(params, -1, 1) # _cat-clip
+        # params = tf.clip_by_value(params, -15, 15) # _cat-clip
         # params = tfp.math.clip_by_value_preserve_gradient(params, -1, 1) # _cat-clip-tfp
+        # params = symexp(params) # _cat-symexp
         params = tf.reshape(params, output_shape)
         dist = tfp.distributions.Categorical(logits=params, dtype=dtype_cat)
         dist = CategoricalIndependentSub(dist, reinterpreted_batch_ndims=reinterpreted_batch_ndims)
@@ -658,11 +660,11 @@ class MultiHeadAttention(tf.keras.layers.MultiHeadAttention):
 
 
 class MLPBlock(tf.keras.layers.Layer):
-    def __init__(self, hidden_size, latent_size, evo=None, residual=True, **kwargs):
+    def __init__(self, hidden_size, latent_size, evo=None, residual=True, use_bias=False, **kwargs):
         super(MLPBlock, self).__init__(**kwargs)
         if evo is None: self._layer_dense = tf.keras.layers.Dense(hidden_size, activation=tf.keras.activations.gelu, use_bias=False, name='_dense')
         else: self._layer_dense = tf.keras.layers.Dense(hidden_size, activation=EvoNormS0(evo), use_bias=False, name='_dense')
-        self._layer_dense_latent = tf.keras.layers.Dense(latent_size, use_bias=False, name='_dense_latent')
+        self._layer_dense_latent = tf.keras.layers.Dense(latent_size, use_bias=use_bias, name='_dense_latent')
         self._residual = residual
 
     def build(self, input_shape):

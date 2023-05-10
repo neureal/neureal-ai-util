@@ -114,7 +114,7 @@ class ArchGen(tf.keras.Model):
         # num_latents, latent_size = latent_spec['num_latents'], latent_spec['latent_size']
         # # self.layer_attn_in = util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, norm=False, residual=False, cross_type=1, num_latents=num_latents, channels=latent_size, memory_size=memory_size, name='attn_in')
         # self.layer_attn_in = util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, memory_size=memory_size, residual=True, name='attn_in')
-        # self.layer_mlp_in = util.MLPBlock(hidden_size=256, latent_size=latent_size, evo=None, residual=True, name='mlp_in')
+        # self.layer_mlp_in = util.MLPBlock(hidden_size=256, latent_size=latent_size, evo=None, residual=True, use_bias=False, name='mlp_in')
 
         self.net = Net(latent_spec, obs_latent=False, net_blocks=net_blocks, net_lstm=net_lstm, net_attn=net_attn['net'], net_attn_io=net_attn['io'], net_attn_ar=net_attn['ar'], num_heads=num_heads, memory_size=memory_size, latent_multi=latent_multi)
         self.out = Out(latent_spec, spec_out, net_attn_io=net_attn['out'], num_heads=num_heads)
@@ -213,7 +213,7 @@ class In(tf.keras.layers.Layer):
             #     if net_attn_io: self.layer_attn_in[space_name] += [util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, norm=False, residual=False, cross_type=1, num_latents=num_latents, channels=latent_size, name='attn_in_{}_{}'.format(space_name, input_name))]
             #     else: self.layer_attn_in[space_name] += [tf.keras.layers.Dense(num_latents*latent_size, name='dense_in_{}_{}'.format(space_name, input_name))]
             else: self.layer_attn_in[space_name] += [None]
-            self.layer_mlp_in[space_name] += [util.MLPBlock(hidden_size=inp, latent_size=latent_size, evo=evo, residual=False, name='mlp_in_{}_{}'.format(space_name, input_name))]
+            self.layer_mlp_in[space_name] += [util.MLPBlock(hidden_size=inp, latent_size=latent_size, evo=evo, residual=False, use_bias=False, name='mlp_in_{}_{}'.format(space_name, input_name))]
         if net_attn_io and self.num_latents > aio_max_latents:
             self.net_attn_io2, self.num_latents = True, aio_max_latents
             self.layer_attn_io2 = util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, norm=False, residual=False, cross_type=1, num_latents=self.num_latents, channels=latent_size, save_attn_scores=True, name='attn_io2')
@@ -285,13 +285,13 @@ class Net(tf.keras.layers.Layer):
                 self.layer_lstm += [tf.keras.layers.LSTM(latent_size, return_sequences=True, stateful=True, name='lstm_{:02d}'.format(i))] # CUDA
                 self.layer_dense += [tf.keras.layers.Dense(latent_size, use_bias=False, name='dense_{:02d}'.format(i))]
                 self._residual_amt += [tf.Variable(0.0, dtype=self.compute_dtype, trainable=True, name='residual_{:02d}'.format(i))] # ReZero
-            self.layer_mlp += [util.MLPBlock(hidden_size=midp, latent_size=latent_size, evo=evo, residual=True, name='mlp_{:02d}'.format(i))]
+            self.layer_mlp += [util.MLPBlock(hidden_size=midp, latent_size=latent_size, evo=evo, residual=True, use_bias=False, name='mlp_{:02d}'.format(i))]
 
         params_size, self.dist = util.distribution(latent_spec)
         if obs_latent:
             if net_attn_io: self.layer_attn_out = util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, norm=False, residual=False, cross_type=1, num_latents=self.num_latents, channels=latent_size, name='attn_out')
             else: self.layer_dense_out = tf.keras.layers.Dense(self.num_latents*latent_size, use_bias=False, name='dense_out')
-        if self.dist_out: self.layer_out_logits = util.MLPBlock(hidden_size=outp, latent_size=params_size, evo=evo, residual=False, name='mlp_out_logits')
+        if self.dist_out: self.layer_out_logits = util.MLPBlock(hidden_size=outp, latent_size=params_size, evo=evo, residual=False, use_bias=False, name='mlp_out_logits')
 
         self.arch_lat = "L{}{}{}x{}".format(latent_spec['dist_type'], ('' if latent_multi==0 else str(latent_multi+1)+'x'), self.num_latents, latent_size)
 
@@ -328,7 +328,7 @@ class Out(tf.keras.layers.Layer):
             params_size[i], self.dist[i] = util.distribution(spec_out[i])
             if self.net_attn_io: self.layer_attn_out[i] = util.MultiHeadAttention(latent_size=latent_size, num_heads=num_heads, memory_size=None, norm=False, residual=False, cross_type=1, num_latents=seq_size_out*event_size, channels=latent_size, name='attn_out_{}_{}'.format(space_name, output_name))
             else: self.layer_dense_out[i] = tf.keras.layers.Dense(seq_size_out*event_size*latent_size, use_bias=False, name='dense_out_{}_{}'.format(space_name, output_name))
-            self.layer_out_logits[i] = util.MLPBlock(hidden_size=outp, latent_size=params_size[i], evo=evo, residual=False, name='mlp_out_logits_{}_{}'.format(space_name, output_name))
+            self.layer_out_logits[i] = util.MLPBlock(hidden_size=outp, latent_size=params_size[i], evo=evo, residual=False, use_bias=False, name='mlp_out_logits_{}_{}'.format(space_name, output_name))
 
             self.event_size[i], self.step_shape[i], self.seq_size_out[i] = tf.constant(event_size), list(step_shape[1:-1])+[latent_size], seq_size_out
             self.arch_out += "{}{}".format(dist_type, num_components)

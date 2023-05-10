@@ -89,7 +89,7 @@ load_model, save_model = False, False
 max_episodes = 1; max_steps = 256; mem_img_size = 4; memory_size = 256
 seed0 = False
 net_blocks = 4; net_width = 2048; evo=64; latent_size = 16; num_heads = 4; latent_dist = 'd'
-net_lstm = False; net_attn = {'net':True, 'io':True, 'out':True, 'ar':True}; aio_max_latents = 16; latent_multi = 63
+net_lstm = False; net_attn = {'net':True, 'io':True, 'out':True, 'ar':True}; aio_max_latents = 16; latent_multi = 3
 opt_type = 'a'; schedule_type = ''; learn_rate = tf.constant(2e-4, compute_dtype)
 aug_data_pos = True # _aug-pos
 machine, device, extra_info = 'dev', 0, '' # _aug-pos _lr-snre
@@ -175,8 +175,8 @@ with tf.device("/device:{}:{}".format(device_type,(device if device_type=='GPU' 
 
 
 
-        # initializer = tf.keras.initializers.GlorotUniform(seed)
-        initializer = tf.keras.initializers.VarianceScaling(scale=0.9999, mode='fan_in', distribution='uniform', seed=seed)
+        initializer = tf.keras.initializers.GlorotUniform(seed)
+        # initializer = tf.keras.initializers.GlorotNormal(seed)
         opt_spec = [{'name':'net', 'type':opt_type, 'schedule_type':schedule_type, 'learn_rate':learn_rate, 'float_eps':float_eps, 'num_steps':num_steps_train, 'lr_min':2e-7}]; stats_spec = [{'name':'loss', 'b1':0.99, 'b2':0.99, 'dtype':compute_dtype},{'name':'diff', 'b1':0.99, 'b2':0.99, 'dtype':compute_dtype}]
         inputs = {'obs':[tf.constant(train_obs[0:1])]}; in_spec = [{'space_name':'obs', 'name':'', 'event_shape':obs_event_shape, 'event_size':obs_event_size, 'channels':obs_channels, 'step_shape':obs_step_shape, 'num_latents':num_latents}]
 
